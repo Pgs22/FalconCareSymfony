@@ -94,7 +94,7 @@ El backend está preparado para:
 * Control de errores mediante respuestas HTTP normalizadas.
 * Futuras implementaciones de autenticación y autorización (JWT, roles, etc.).
 
-Actualmente, la seguridad se enfoca en un contexto educativo y de desarrollo.
+**Requisitos de seguridad, privacidad y cumplimiento** (datos de pacientes, subida de archivos, RBAC, cifrado, retención, auditoría y consideraciones GDPR en contexto educativo) están documentados en **[docs/security.md](docs/security.md)** (Issue #4).
 
 ---
 
@@ -136,6 +136,14 @@ La API quedará disponible por defecto en:
 ```text
 http://localhost:8000
 ```
+
+---
+
+## 📍 Configuración en este entorno
+
+* **Repositorio único (backend):** [https://github.com/Pgs22/FalconCareSymfony](https://github.com/Pgs22/FalconCareSymfony.git)
+* **Base de datos:** PostgreSQL en la nube (Neon). La conexión está configurada en `.env.local` (no se sube al repositorio).
+* Para usar otra BD o entorno, crea o edita `.env.local` y define `DATABASE_URL` (ej. PostgreSQL con `sslmode=require` para Neon).
 
 ---
 
