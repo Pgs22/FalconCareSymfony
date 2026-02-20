@@ -7,6 +7,11 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Odontogram_Details table (English spec).
+ * Detail_ID (PK), Visit_ID (FK), Tooth_ID (FK), Pathology_ID (FK),
+ * Tooth_Surface (Buccal, Occlusal, etc.), Coordinates_3D (optional).
+ */
 #[ORM\Entity(repositoryClass: OdontogramDetailRepository::class)]
 #[ORM\Table(name: 'odontogram_details')]
 #[ORM\Index(columns: ['visit_id'], name: 'idx_odontogram_visit')]
@@ -39,7 +44,7 @@ class OdontogramDetail
     #[Assert\Length(max: 50)]
     private ?string $toothSurface = null;
 
-    /** For optional 3D functionality (Vestibular, Occlusal, etc.) */
+    /** Coordinates_3D: for optional 3D functionality */
     #[ORM\Column(name: 'coordinates_3d', type: Types::JSON, nullable: true)]
     private ?array $coordinates3d = null;
 

@@ -9,6 +9,10 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Teeth table (English spec).
+ * Tooth_ID (PK), Description (Numbering 11–48).
+ */
 #[ORM\Entity(repositoryClass: ToothRepository::class)]
 #[ORM\Table(name: 'teeth')]
 #[ORM\Index(columns: ['description'], name: 'idx_tooth_description')]

@@ -9,6 +9,11 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Dentists table (English spec).
+ * Doctor_ID (PK), First_Name, Last_Name, Specialty,
+ * Assigned_Day_of_Week, Phone, Email.
+ */
 #[ORM\Entity(repositoryClass: DentistRepository::class)]
 #[ORM\Table(name: 'dentists')]
 #[ORM\Index(columns: ['email'], name: 'idx_dentist_email')]
@@ -39,9 +44,9 @@ class Dentist
     #[Assert\Length(max: 20)]
     private ?string $assignedDayOfWeek = null;
 
-    #[ORM\Column(name: 'telephone', type: Types::STRING, length: 50, nullable: true)]
+    #[ORM\Column(name: 'phone', type: Types::STRING, length: 50, nullable: true)]
     #[Assert\Length(max: 50)]
-    private ?string $telephone = null;
+    private ?string $phone = null;
 
     #[ORM\Column(name: 'email', type: Types::STRING, length: 255, nullable: true)]
     #[Assert\Email]
@@ -105,14 +110,14 @@ class Dentist
         return $this;
     }
 
-    public function getTelephone(): ?string
+    public function getPhone(): ?string
     {
-        return $this->telephone;
+        return $this->phone;
     }
 
-    public function setTelephone(?string $telephone): static
+    public function setPhone(?string $phone): static
     {
-        $this->telephone = $telephone;
+        $this->phone = $phone;
         return $this;
     }
 
