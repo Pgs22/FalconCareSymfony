@@ -9,6 +9,11 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Visits table (English spec).
+ * Visit_ID (PK), Patient_ID (FK), Doctor_ID (FK), Box_ID (FK), Treatment_ID (FK),
+ * Visit_Date, Visit_Time, Reason_for_Consultation, Notes.
+ */
 #[ORM\Entity(repositoryClass: VisitRepository::class)]
 #[ORM\Table(name: 'visits')]
 #[ORM\Index(columns: ['id_patient'], name: 'idx_visit_patient')]
@@ -53,8 +58,8 @@ class Visit
     #[ORM\Column(name: 'reason_for_consultation', type: Types::TEXT, nullable: true)]
     private ?string $reasonForConsultation = null;
 
-    #[ORM\Column(name: 'observations', type: Types::TEXT, nullable: true)]
-    private ?string $observations = null;
+    #[ORM\Column(name: 'notes', type: Types::TEXT, nullable: true)]
+    private ?string $notes = null;
 
     #[ORM\OneToMany(targetEntity: OdontogramDetail::class, mappedBy: 'visit', cascade: ['persist', 'remove'])]
     private Collection $odontogramDetails;
@@ -146,14 +151,14 @@ class Visit
         return $this;
     }
 
-    public function getObservations(): ?string
+    public function getNotes(): ?string
     {
-        return $this->observations;
+        return $this->notes;
     }
 
-    public function setObservations(?string $observations): static
+    public function setNotes(?string $notes): static
     {
-        $this->observations = $observations;
+        $this->notes = $notes;
         return $this;
     }
 

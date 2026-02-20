@@ -9,6 +9,10 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Pathologies table (English spec).
+ * Pathology_ID (PK), Description (e.g. Caries, Missing Tooth), Protocol_Color (Red/Blue).
+ */
 #[ORM\Entity(repositoryClass: PathologyRepository::class)]
 #[ORM\Table(name: 'pathologies')]
 #[ORM\Index(columns: ['description'], name: 'idx_pathology_description')]

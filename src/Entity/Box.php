@@ -15,8 +15,12 @@ enum BoxStatus: string
     case INACTIVE = 'Inactive';
 }
 
+/**
+ * Boxes table (English spec).
+ * Box_ID (PK), Box_Name (e.g. "Box 1"), Status (Active/Inactive), Capacity.
+ */
 #[ORM\Entity(repositoryClass: BoxRepository::class)]
-#[ORM\Table(name: 'treatment_rooms')]
+#[ORM\Table(name: 'boxes')]
 #[ORM\Index(columns: ['status'], name: 'idx_box_status')]
 class Box
 {

@@ -9,6 +9,12 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Patient table (English spec).
+ * Patient_ID (PK), National_ID (Unique), First_Name, Last_Name, Social_Security_Number,
+ * Phone, Email, Address, Billing_Information, Reason_for_Consultation,
+ * Family_History, Health_Status, Lifestyle_Habits, Medication_Allergies, Registration_Date.
+ */
 #[ORM\Entity(repositoryClass: PatientRepository::class)]
 #[ORM\Table(name: 'patients')]
 #[ORM\Index(columns: ['national_id'], name: 'idx_patient_national_id')]
@@ -39,9 +45,9 @@ class Patient
     #[Assert\Length(max: 50)]
     private ?string $socialSecurityNumber = null;
 
-    #[ORM\Column(name: 'telephone', type: Types::STRING, length: 50, nullable: true)]
+    #[ORM\Column(name: 'phone', type: Types::STRING, length: 50, nullable: true)]
     #[Assert\Length(max: 50)]
-    private ?string $telephone = null;
+    private ?string $phone = null;
 
     #[ORM\Column(name: 'email', type: Types::STRING, length: 255, nullable: true)]
     #[Assert\Email]
@@ -67,8 +73,8 @@ class Patient
     #[ORM\Column(name: 'lifestyle_habits', type: Types::TEXT, nullable: true)]
     private ?string $lifestyleHabits = null;
 
-    #[ORM\Column(name: 'allergy_medications', type: Types::TEXT, nullable: true)]
-    private ?string $allergyMedications = null;
+    #[ORM\Column(name: 'medication_allergies', type: Types::TEXT, nullable: true)]
+    private ?string $medicationAllergies = null;
 
     #[ORM\Column(name: 'registration_date', type: Types::DATETIME_MUTABLE)]
     #[Assert\NotNull]
@@ -136,14 +142,14 @@ class Patient
         return $this;
     }
 
-    public function getTelephone(): ?string
+    public function getPhone(): ?string
     {
-        return $this->telephone;
+        return $this->phone;
     }
 
-    public function setTelephone(?string $telephone): static
+    public function setPhone(?string $phone): static
     {
-        $this->telephone = $telephone;
+        $this->phone = $phone;
         return $this;
     }
 
@@ -224,14 +230,14 @@ class Patient
         return $this;
     }
 
-    public function getAllergyMedications(): ?string
+    public function getMedicationAllergies(): ?string
     {
-        return $this->allergyMedications;
+        return $this->medicationAllergies;
     }
 
-    public function setAllergyMedications(?string $allergyMedications): static
+    public function setMedicationAllergies(?string $medicationAllergies): static
     {
-        $this->allergyMedications = $allergyMedications;
+        $this->medicationAllergies = $medicationAllergies;
         return $this;
     }
 

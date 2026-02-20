@@ -7,6 +7,10 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Documents table (English spec).
+ * Image_ID (PK), Patient_ID (FK), Type (X-ray, Scan), File_Path (URL/Path), Capture_Date.
+ */
 #[ORM\Entity(repositoryClass: DocumentRepository::class)]
 #[ORM\Table(name: 'documents')]
 #[ORM\Index(columns: ['patient_id'], name: 'idx_document_patient')]
