@@ -242,6 +242,26 @@ class Patient
     }
 
     /**
+     * Returns the same collection as getAppointments() (alias for compatibility).
+     *
+     * @return Collection<int, Appointment>
+     */
+    public function getDoctor(): Collection
+    {
+        return $this->appointments;
+    }
+
+    public function addDoctor(Appointment $doctor): static
+    {
+        return $this->addAppointment($doctor);
+    }
+
+    public function removeDoctor(Appointment $doctor): static
+    {
+        return $this->removeAppointment($doctor);
+    }
+
+    /**
      * @return Collection<int, Appointment>
      */
     public function getDoctor(): Collection
