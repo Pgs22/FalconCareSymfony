@@ -1,80 +1,169 @@
-# 🦷 FalconCare - Guía Técnica del Proyecto
+# FalconCare
 
-Este documento detalla el paso a paso de la construcción de FalconCare, una aplicación de gestión dental desarrollada con **Symfony 7** y **PostgreSQL (Neon)**.
+> Dental clinic management system built with **Symfony 7** and **PostgreSQL** (compatible with [Neon](https://neon.tech)). Manages patients, doctors, appointments, treatments, odontograms, and clinical documentation, with authentication and registration.
 
-## 🛠️ 1. Configuración Inicial del Proyecto
-
-1. **Crear el proyecto:** `symfony new FalconCare`
-2. **Entrar a la carpeta:** `cd FalconCare`
-3. **Instalar el motor de Base de Datos:** `composer require symfony/orm-pack`
-4. **Instalar el generador de código:** `composer require symfony/maker-bundle --dev`
-5. **Configuración de XAMPP (PostgreSQL):**
-   Es necesario descomentar las siguientes líneas en el `php.ini` para permitir la comunicación con Neon:
-   ```ini
-   extension=pdo_pgsql
-   extension=pgsql
-6.  **Soporte para Angular:** `composer require symfony/serializer-pack` (para convertir entidades a JSON) [cite: 12-02-2026].
-7.  **Arrancar el servidor:** `symfony server:start` [cite: 12-02-2026].
-8. **Seguridad de Credenciales:** * Añadir fichero `.env.local` con la ruta de acceso a Neon [cite: 12-02-2026].
-    * Configurar `.gitignore` para no subir estas credenciales a GitHub [cite: 12-02-2026].
-
-
-# 🦷 FalconCare - Desarrollo del Sistema Dental
-
-Registro técnico de la construcción de la infraestructura, entidades y sincronización con la base de datos **Neon** [cite: 12-02-2026].
-
-## 🛠️ 1. Configuración de Entorno y Backend
-
-* **Soporte para Angular:** `composer require symfony/serializer-pack` (Permite la conversión de entidades a JSON) [cite: 12-02-2026].
-* **Servidor Local:** Ejecución mediante `symfony server:start` [cite: 12-02-2026].
-* **Seguridad de Credenciales:**
-    * Creación del fichero `.env.local` para almacenar la URL de acceso a **Neon** [cite: 12-02-2026].
-    * Configuración de `.gitignore` para excluir credenciales sensibles del repositorio público [cite: 12-02-2026].
+**Application code:** `FalconCare/` folder. All installation and run commands must be executed from `FalconCare/`.
 
 ---
 
-## 🏗️ 2. Definición de Entidades (Clases Modernas)
+## Prerequisites
 
-Se han diseñado las siguientes **clases** bajo estándares modernos para el modelado clínico [cite: 12-02-2026]:
+- **PHP** >= 8.2
+- **Composer** 2.x
+- **PostgreSQL** 16+ (or an account on [Neon](https://neon.tech))
+- **PHP extensions:** `ctype`, `iconv`, `pdo_pgsql`, `pgsql`, `json`, `mbstring`, `openssl`, `xml`, `zip`
 
-### 👤 Acceso y Personal
-* **User:** Identificación por email y gestión de contraseñas con hash seguro [cite: 12-02-2026].
-* **Doctor:** Datos personales, especialidad médica y calendario de días asignados [cite: 12-02-2026].
+### PHP configuration (XAMPP or other)
 
-### 🏥 Pacientes y Gestión Clínica
-* **Patient:** Ficha completa con documento de identidad, SS, contacto y antecedentes clínicos [cite: 12-02-2026].
-* **Box:** Gestión de gabinetes con nombre, capacidad y estado de disponibilidad [cite: 12-02-2026].
-* **Treatment:** Catálogo de servicios con descripción y tiempos estimados [cite: 12-02-2026].
-* **Pathology:** Registro de patologías con codificación por colores de protocolo [cite: 12-02-2026].
-* **Tooth:** Identificación técnica de piezas dentales [cite: 12-02-2026].
+In `php.ini`, uncomment or add:
 
-### 📅 Lógica de Citas y Odontograma
-* **Appointment (Cita):** Gestión de agenda con fecha, hora y estado.
-    * **Relaciones (ManyToOne):** Patient, Doctor, Box, Treatment [cite: 12-02-2026].
-* **Odontogram:** Registro detallado por superficie dental.
-    * **Relaciones (ManyToOne):** Appointment (visit), Tooth, Pathology [cite: 12-02-2026].
-* **Document:** Gestión de archivos y capturas vinculadas al historial.
-    * **Relaciones (ManyToOne):** Patient [cite: 12-02-2026].
+```ini
+extension=pdo_pgsql
+extension=pgsql
+```
+
+> Restart the web server or PHP after changing `php.ini`.
 
 ---
 
-## 🔄 3. Sincronización con Base de Datos (Neon)
+## Installation (recommended order)
 
-Protocolo seguido para asegurar la integridad de los datos en la nube [cite: 12-02-2026]:
+### 1. Clone the repository
 
-1. **Verificación de Conexión:** `php bin/console doctrine:query:sql "SELECT current_database();"` [cite: 12-02-2026].
-2. **Snapshot de Seguridad:** Copia de seguridad realizada en el panel de **Neon** antes de cambios estructurales.
-3. **Limpieza de Esquema:**
-   ```powershell
-   php bin/console doctrine:schema:drop --force --full-database
+```bash
+git clone <repository-url>
+cd FalconCareSymfony
+```
 
-## 🚀 4. Despliegue de Estructura
+### 2. Enter the Symfony project and install dependencies
 
-Una vez definida la lógica de las entidades, se ejecutan los comandos de Doctrine para materializar los cambios en la base de datos de Neon [cite: 12-02-2026]:
+```bash
+cd FalconCare
+composer install
+```
 
-```powershell
-# Generar el archivo de migración basado en las entidades
+This installs dependencies and automatically runs: cache clear, assets install, and importmap. You do not need to run them manually.
+
+### 3. Configure the database
+
+Create the `.env.local` file inside `FalconCare/` (it is not committed to Git) and set the PostgreSQL connection URL:
+
+```env
+DATABASE_URL="postgresql://user:password@host:5432/dbname?serverVersion=16&charset=utf8"
+```
+
+- **Local PostgreSQL:** replace `user`, `password`, `host` (e.g. `127.0.0.1`), `dbname`, and if you use another version, `serverVersion`.
+- **Neon:** copy the connection string from the Neon dashboard (Connection string) and paste it into `DATABASE_URL`. Adjust `serverVersion` if required by Neon documentation.
+
+> **Important:** do not commit `.env.local` or credentials to the repository. `.env.local` is already in `.gitignore`.
+
+### 4. Verify the database connection
+
+From the `FalconCare/` folder:
+
+```bash
+php bin/console doctrine:query:sql "SELECT current_database();"
+```
+
+If it returns your database name, the connection is correct.
+
+### 5. Run migrations
+
+From `FalconCare/`:
+
+```bash
+php bin/console doctrine:migrations:migrate --no-interaction
+```
+
+With `--no-interaction`, all pending migrations are applied without prompting. In development you can omit the flag and confirm when prompted.
+
+If you later change entities and need to generate a new migration:
+
+```bash
 php bin/console make:migration
-
-# Aplicar los cambios a la base de datos
 php bin/console doctrine:migrations:migrate
+```
+
+### 6. (Optional) Configure APP_SECRET
+
+If `APP_SECRET` is empty in `.env`, set a value in `.env.local` (e.g. a long random string). The application may run without it in development, but it is recommended for sessions and cookies.
+
+### 7. Start the development server
+
+From `FalconCare/`:
+
+```bash
+symfony server:start
+```
+
+Or with the built-in PHP server:
+
+```bash
+php -S localhost:8000 -t public
+```
+
+Open in your browser the URL shown by the command (e.g. `http://localhost:8000` or `http://127.0.0.1:8000`).
+
+---
+
+## Quick summary (with repo already cloned)
+
+```bash
+cd FalconCare
+composer install
+# Create .env.local with correct DATABASE_URL
+php bin/console doctrine:query:sql "SELECT current_database();"
+php bin/console doctrine:migrations:migrate --no-interaction
+symfony server:start
+```
+
+---
+
+## Project structure (in `FalconCare/`)
+
+| Area            | Entity       | Brief description |
+| :-------------- | :----------- | :---------------- |
+| Access          | `User`       | Email, hashed password |
+| Staff           | `Doctor`     | Specialty, assigned days |
+| Patients        | `Patient`    | Record, document, SS, contact, medical history |
+| Clinic          | `Box`        | Cabinets, capacity, availability |
+| Catalogs        | `Treatment`, `Pathology`, `Tooth` | Treatments, pathologies, tooth units |
+| Schedule        | `Appointment` | Appointments (Patient, Doctor, Box, Treatment) |
+| Odontogram      | `Odontogram` | Per tooth surface (Appointment, Tooth, Pathology) |
+| Documents       | `Document`   | History files (Patient) |
+
+**Main folders:** `src/Entity/`, `src/Repository/`, `src/Controller/`, `src/Form/`, `src/Security/`, `config/`.
+
+---
+
+## Security and API
+
+- Passwords are handled by Symfony’s **Security** component.
+- `symfony/serializer` is installed to expose entities as JSON (e.g. for an Angular frontend).
+
+---
+
+## Tests and useful commands
+
+**Run tests** (from `FalconCare/`):
+
+```bash
+composer test
+# or
+./vendor/bin/phpunit
+```
+
+**Useful commands** (always from `FalconCare/`):
+
+| Command | Description |
+| :------ | :---------- |
+| `php bin/console doctrine:migrations:migrate` | Apply migrations |
+| `php bin/console make:migration` | Generate migration after changing entities |
+| `php bin/console cache:clear` | Clear cache |
+| `php bin/console list` | List available commands |
+
+---
+
+## License
+
+Proprietary project. See `FalconCare/composer.json`.
