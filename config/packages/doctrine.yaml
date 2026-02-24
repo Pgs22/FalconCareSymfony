@@ -27,11 +27,7 @@ doctrine:
         controller_resolver:
             auto_mapping: false
 
-when@test:
-    doctrine:
-        dbal:
-            # "TEST_TOKEN" is typically set by ParaTest
-            dbname_suffix: '_test%env(default::TEST_TOKEN)%'
+# Test DB config: config/packages/test/doctrine.yaml (dbname_suffix: '' to use same DB as dev)
 
 when@prod:
     doctrine:

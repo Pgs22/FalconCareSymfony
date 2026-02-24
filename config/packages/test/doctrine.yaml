@@ -1,0 +1,4 @@
+# Use same database as dev for tests (no dbname_suffix) when using Neon/single DB
+doctrine:
+    dbal:
+        dbname_suffix: ''
