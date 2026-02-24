@@ -59,12 +59,6 @@ class Patient
      * @var Collection<int, Appointment>
      */
     #[ORM\OneToMany(targetEntity: Appointment::class, mappedBy: 'patient')]
-    private Collection $doctor;
-
-    /**
-     * @var Collection<int, Appointment>
-     */
-    #[ORM\OneToMany(targetEntity: Appointment::class, mappedBy: 'patient')]
     private Collection $appointments;
 
     /**
@@ -75,7 +69,6 @@ class Patient
 
     public function __construct()
     {
-        $this->doctor = new ArrayCollection();
         $this->appointments = new ArrayCollection();
         $this->documents = new ArrayCollection();
     }
@@ -259,36 +252,6 @@ class Patient
     public function removeDoctor(Appointment $doctor): static
     {
         return $this->removeAppointment($doctor);
-    }
-
-    /**
-     * @return Collection<int, Appointment>
-     */
-    public function getDoctor(): Collection
-    {
-        return $this->doctor;
-    }
-
-    public function addDoctor(Appointment $doctor): static
-    {
-        if (!$this->doctor->contains($doctor)) {
-            $this->doctor->add($doctor);
-            $doctor->setPatient($this);
-        }
-
-        return $this;
-    }
-
-    public function removeDoctor(Appointment $doctor): static
-    {
-        if ($this->doctor->removeElement($doctor)) {
-            // set the owning side to null (unless already changed)
-            if ($doctor->getPatient() === $this) {
-                $doctor->setPatient(null);
-            }
-        }
-
-        return $this;
     }
 
     /**
