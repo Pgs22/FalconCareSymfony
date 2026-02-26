@@ -58,7 +58,7 @@ final class DocumentApiController extends AbstractController
 
         $newFilename = uniqid('', true) . '.' . $uploadedFile->guessExtension();
 
-        $uploadDir = $this->getParameter('kernel.project_dir') . '/public/uploads';
+        $uploadDir = $this->getParameter('kernel.project_dir') . '/public/uploads/documents';
         if (!is_dir($uploadDir)) {
             // try to create the directory if it doesn't exist (permissions permitting)
             @mkdir($uploadDir, 0777, true);
