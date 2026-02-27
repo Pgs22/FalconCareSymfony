@@ -12,7 +12,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
 #[Route('/api/documents')]
@@ -30,7 +29,7 @@ final class DocumentApiController extends AbstractController
     {
         $documents = $this->documentRepository->findBy([], ['id' => 'ASC']);
         $data = $this->serializer->serialize($documents, 'json', [
-            // you may want to expose specific fields only
+            'groups' => ['document:read'],
         ]);
 
         return new JsonResponse($data, Response::HTTP_OK, [], true);
@@ -39,7 +38,9 @@ final class DocumentApiController extends AbstractController
     #[Route('/{id}', name: 'api_document_show', requirements: ['id' => '\\d+'], methods: ['GET'])]
     public function show(Document $document): JsonResponse
     {
-        $data = $this->serializer->serialize($document, 'json', []);
+        $data = $this->serializer->serialize($document, 'json', [
+            'groups' => ['document:read'],
+        ]);
 
         return new JsonResponse($data, Response::HTTP_OK, [], true);
     }
@@ -56,9 +57,17 @@ final class DocumentApiController extends AbstractController
             return new JsonResponse(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
         }
 
-        $newFilename = uniqid('', true) . '.' . $uploadedFile->guessExtension();
+        $extension = $uploadedFile->guessExtension();
+        if (!$extension) {
+            // fallback to original extension if guessExtension fails
+            $originalName = $uploadedFile->getClientOriginalName();
+            $extension = pathinfo($originalName, PATHINFO_EXTENSION) ?: 'bin';
+        }
 
-        $uploadDir = $this->getParameter('kernel.project_dir') . '/public/uploads/documents';
+        $newFilename = uniqid('', true) . '.' . $extension;
+
+        // Use DIRECTORY_SEPARATOR for consistent path handling on Windows/Linux
+        $uploadDir = $this->getParameter('kernel.project_dir') . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'documents';
         if (!is_dir($uploadDir)) {
             // try to create the directory if it doesn't exist (permissions permitting)
             @mkdir($uploadDir, 0777, true);
@@ -70,7 +79,18 @@ final class DocumentApiController extends AbstractController
                 $newFilename
             );
         } catch (FileException $e) {
-            return new JsonResponse(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            $errorDetails = $e->getMessage();
+            if ($this->container->has('logger')) {
+                $this->container->get('logger')->error('File move failed', [
+                    'path' => $uploadDir,
+                    'filename' => $newFilename,
+                    'exception' => $errorDetails
+                ]);
+            }
+            return new JsonResponse([
+                'error' => 'Could not upload file',
+                'details' => $errorDetails
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         $document = new Document();
@@ -79,18 +99,26 @@ final class DocumentApiController extends AbstractController
         $document->setCaptureDate(new \DateTimeImmutable());
         $document->setDescription($request->request->get('description'));
 
+        // initialize patient variable correctly (typo fixed)
+        $patient = null;
         $patientId = $request->request->get('patient');
         if ($patientId) {
             $patient = $this->entityManager->getRepository(Patient::class)->find($patientId);
-            if ($patient) {
-                $document->setPatient($patient);
+            if (!$patient) {
+                // log missing patient for easier debugging (use container to get logger)
+                if ($this->container->has('logger')) {
+                    $this->container->get('logger')->warning('Document create: patient not found', ['id' => $patientId]);
+                }
             }
         }
+        $document->setPatient($patient);
 
         $this->entityManager->persist($document);
         $this->entityManager->flush();
 
-        $data = $this->serializer->serialize($document, 'json', []);
+        $data = $this->serializer->serialize($document, 'json', [
+            'groups' => ['document:read'],
+        ]);
 
         return new JsonResponse($data, Response::HTTP_CREATED, [], true);
     }
