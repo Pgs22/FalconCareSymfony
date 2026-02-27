@@ -30,7 +30,8 @@ final class DocumentApiController extends AbstractController
     {
         $documents = $this->documentRepository->findBy([], ['id' => 'ASC']);
         $data = $this->serializer->serialize($documents, 'json', [
-            // you may want to expose specific fields only
+            AbstractNormalizer::IGNORED_ATTRIBUTES => ['documents'],
+            AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($object) { return $object->getId(); },
         ]);
 
         return new JsonResponse($data, Response::HTTP_OK, [], true);
@@ -40,6 +41,7 @@ final class DocumentApiController extends AbstractController
     public function show(Document $document): JsonResponse
     {
         $data = $this->serializer->serialize($document, 'json', [
+            AbstractNormalizer::IGNORED_ATTRIBUTES => ['documents'],
             AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($object) {
                 return $object->getId();
             },
@@ -120,6 +122,7 @@ final class DocumentApiController extends AbstractController
         $this->entityManager->flush();
 
         $data = $this->serializer->serialize($document, 'json', [
+            AbstractNormalizer::IGNORED_ATTRIBUTES => ['documents'],
             AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($object) {
                 return $object->getId();
             },
