@@ -39,7 +39,9 @@ final class DocumentApiController extends AbstractController
     #[Route('/{id}', name: 'api_document_show', requirements: ['id' => '\\d+'], methods: ['GET'])]
     public function show(Document $document): JsonResponse
     {
-        $data = $this->serializer->serialize($document, 'json', []);
+        $data = $this->serializer->serialize($document, 'json', [
+            'max_depth' => 1,  // Prevent circular reference
+        ]);
 
         return new JsonResponse($data, Response::HTTP_OK, [], true);
     }
@@ -115,7 +117,9 @@ final class DocumentApiController extends AbstractController
         $this->entityManager->persist($document);
         $this->entityManager->flush();
 
-        $data = $this->serializer->serialize($document, 'json', []);
+        $data = $this->serializer->serialize($document, 'json', [
+            'max_depth' => 1,  // Prevent circular reference
+        ]);
 
         return new JsonResponse($data, Response::HTTP_CREATED, [], true);
     }
