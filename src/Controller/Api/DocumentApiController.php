@@ -56,9 +56,17 @@ final class DocumentApiController extends AbstractController
             return new JsonResponse(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
         }
 
-        $newFilename = uniqid('', true) . '.' . $uploadedFile->guessExtension();
+        $extension = $uploadedFile->guessExtension();
+        if (!$extension) {
+            // fallback to original extension if guessExtension fails
+            $originalName = $uploadedFile->getClientOriginalName();
+            $extension = pathinfo($originalName, PATHINFO_EXTENSION) ?: 'bin';
+        }
 
-        $uploadDir = $this->getParameter('kernel.project_dir') . '/public/uploads/documents';
+        $newFilename = uniqid('', true) . '.' . $extension;
+
+        // Use DIRECTORY_SEPARATOR for consistent path handling on Windows/Linux
+        $uploadDir = $this->getParameter('kernel.project_dir') . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'documents';
         if (!is_dir($uploadDir)) {
             // try to create the directory if it doesn't exist (permissions permitting)
             @mkdir($uploadDir, 0777, true);
