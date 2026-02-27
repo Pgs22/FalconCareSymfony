@@ -79,10 +79,17 @@ final class DocumentApiController extends AbstractController
         $document->setCaptureDate(new \DateTimeImmutable());
         $document->setDescription($request->request->get('description'));
 
-        $pacient = null;
+        // initialize patient variable correctly (typo fixed)
+        $patient = null;
         $patientId = $request->request->get('patient');
         if ($patientId) {
             $patient = $this->entityManager->getRepository(Patient::class)->find($patientId);
+            if (!$patient) {
+                // log missing patient for easier debugging (use container to get logger)
+                if ($this->container->has('logger')) {
+                    $this->container->get('logger')->warning('Document create: patient not found', ['id' => $patientId]);
+                }
+            }
         }
         $document->setPatient($patient);
 
