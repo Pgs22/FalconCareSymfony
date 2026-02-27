@@ -70,7 +70,18 @@ final class DocumentApiController extends AbstractController
                 $newFilename
             );
         } catch (FileException $e) {
-            return new JsonResponse(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            $errorDetails = $e->getMessage();
+            if ($this->container->has('logger')) {
+                $this->container->get('logger')->error('File move failed', [
+                    'path' => $uploadDir,
+                    'filename' => $newFilename,
+                    'exception' => $errorDetails
+                ]);
+            }
+            return new JsonResponse([
+                'error' => 'Could not upload file',
+                'details' => $errorDetails
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         $document = new Document();
