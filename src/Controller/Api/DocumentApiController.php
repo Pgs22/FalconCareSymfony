@@ -12,7 +12,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
 #[Route('/api/documents')]
@@ -30,8 +29,7 @@ final class DocumentApiController extends AbstractController
     {
         $documents = $this->documentRepository->findBy([], ['id' => 'ASC']);
         $data = $this->serializer->serialize($documents, 'json', [
-            AbstractNormalizer::IGNORED_ATTRIBUTES => ['documents'],
-            AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($object) { return $object->getId(); },
+            'groups' => ['document:read'],
         ]);
 
         return new JsonResponse($data, Response::HTTP_OK, [], true);
@@ -41,10 +39,7 @@ final class DocumentApiController extends AbstractController
     public function show(Document $document): JsonResponse
     {
         $data = $this->serializer->serialize($document, 'json', [
-            AbstractNormalizer::IGNORED_ATTRIBUTES => ['documents'],
-            AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($object) {
-                return $object->getId();
-            },
+            'groups' => ['document:read'],
         ]);
 
         return new JsonResponse($data, Response::HTTP_OK, [], true);
@@ -122,10 +117,7 @@ final class DocumentApiController extends AbstractController
         $this->entityManager->flush();
 
         $data = $this->serializer->serialize($document, 'json', [
-            AbstractNormalizer::IGNORED_ATTRIBUTES => ['documents'],
-            AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($object) {
-                return $object->getId();
-            },
+            'groups' => ['document:read'],
         ]);
 
         return new JsonResponse($data, Response::HTTP_CREATED, [], true);
