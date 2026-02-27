@@ -79,13 +79,12 @@ final class DocumentApiController extends AbstractController
         $document->setCaptureDate(new \DateTimeImmutable());
         $document->setDescription($request->request->get('description'));
 
+        $pacient = null;
         $patientId = $request->request->get('patient');
         if ($patientId) {
             $patient = $this->entityManager->getRepository(Patient::class)->find($patientId);
-            if ($patient) {
-                $document->setPatient($patient);
-            }
         }
+        $document->setPatient($patient);
 
         $this->entityManager->persist($document);
         $this->entityManager->flush();

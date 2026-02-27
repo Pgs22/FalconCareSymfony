@@ -26,8 +26,8 @@ class Document
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $description = null;
 
-    #[ORM\ManyToOne(inversedBy: 'documents')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\ManyToOne(targetEntity: Patient::class, inversedBy: 'documents')]
+    #[ORM\JoinColumn(nullable: true)]
     private ?Patient $patient = null;
 
     public function getId(): ?int
