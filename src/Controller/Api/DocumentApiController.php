@@ -40,7 +40,9 @@ final class DocumentApiController extends AbstractController
     public function show(Document $document): JsonResponse
     {
         $data = $this->serializer->serialize($document, 'json', [
-            'max_depth' => 1,  // Prevent circular reference
+            AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($object) {
+                return $object->getId();
+            },
         ]);
 
         return new JsonResponse($data, Response::HTTP_OK, [], true);
@@ -118,7 +120,9 @@ final class DocumentApiController extends AbstractController
         $this->entityManager->flush();
 
         $data = $this->serializer->serialize($document, 'json', [
-            'max_depth' => 1,  // Prevent circular reference
+            AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($object) {
+                return $object->getId();
+            },
         ]);
 
         return new JsonResponse($data, Response::HTTP_CREATED, [], true);
