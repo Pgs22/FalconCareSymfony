@@ -146,7 +146,7 @@ final class DocumentApiController extends AbstractController
     #[Route('/{id}/download', name: 'api_document_download', requirements: ['id' => '\\d+'], methods: ['GET'])]
     public function download(Document $document): Response
     {
-        $file = $this->getParameter('kernel.project_dir') . '/public/uploads/' . $document->getFilePath();
+        $file = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
         return $this->file($file);
     }
 }
