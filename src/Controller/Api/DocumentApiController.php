@@ -8,6 +8,7 @@ use App\Repository\DocumentRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -45,82 +46,68 @@ final class DocumentApiController extends AbstractController
         return new JsonResponse($data, Response::HTTP_OK, [], true);
     }
 
-    /**
-     * Upload a new document file. Expects a multipart/form-data request with a "file" field.
-     * Additional form parameters: type, description, patient (id).
-     */
     #[Route(name: 'api_document_create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {
+        // 1. Validate file existence [cite: 12-02-2026]
         $uploadedFile = $request->files->get('file');
         if (!$uploadedFile) {
             return new JsonResponse(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
         }
 
-        $extension = $uploadedFile->guessExtension();
-        if (!$extension) {
-            // fallback to original extension if guessExtension fails
-            $originalName = $uploadedFile->getClientOriginalName();
-            $extension = pathinfo($originalName, PATHINFO_EXTENSION) ?: 'bin';
+        // 2. Validate patient existence - REQUIRED FOR DOCUMENTS [cite: 12-02-2026]
+        $patientId = $request->request->get('patient');
+        if (!$patientId) {
+            return new JsonResponse(['error' => 'Patient ID is required to upload a document'], Response::HTTP_BAD_REQUEST);
         }
 
-        $newFilename = uniqid('', true) . '.' . $extension;
-
-        // Use DIRECTORY_SEPARATOR for consistent path handling on Windows/Linux
-        $uploadDir = $this->getParameter('kernel.project_dir') . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'documents';
-        if (!is_dir($uploadDir)) {
-            // try to create the directory if it doesn't exist (permissions permitting)
-            @mkdir($uploadDir, 0777, true);
+        $patient = $this->entityManager->getRepository(Patient::class)->find($patientId);
+        
+        if (!$patient) {
+            return new JsonResponse(['error' => 'Patient not found'], Response::HTTP_NOT_FOUND);
         }
 
+        // 3. Handle physical file storage [cite: 12-02-2026]
         try {
-            $uploadedFile->move(
-                $uploadDir,
-                $newFilename
-            );
+            // Calling the private helper method [cite: 12-02-2026]
+            $filename = $this->handleFileStorage($uploadedFile, $patient);
         } catch (FileException $e) {
-            $errorDetails = $e->getMessage();
-            if ($this->container->has('logger')) {
-                $this->container->get('logger')->error('File move failed', [
-                    'path' => $uploadDir,
-                    'filename' => $newFilename,
-                    'exception' => $errorDetails
-                ]);
-            }
-            return new JsonResponse([
-                'error' => 'Could not upload file',
-                'details' => $errorDetails
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+            return new JsonResponse(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
+        // 4. Create and persist entity [cite: 12-02-2026]
         $document = new Document();
-        $document->setFilePath($newFilename);
+        $document->setFilePath($filename);
         $document->setType((string) $request->request->get('type', ''));
         $document->setCaptureDate(new \DateTimeImmutable());
         $document->setDescription($request->request->get('description'));
-
-        // initialize patient variable correctly (typo fixed)
-        $patient = null;
-        $patientId = $request->request->get('patient');
-        if ($patientId) {
-            $patient = $this->entityManager->getRepository(Patient::class)->find($patientId);
-            if (!$patient) {
-                // log missing patient for easier debugging (use container to get logger)
-                if ($this->container->has('logger')) {
-                    $this->container->get('logger')->warning('Document create: patient not found', ['id' => $patientId]);
-                }
-            }
-        }
         $document->setPatient($patient);
 
         $this->entityManager->persist($document);
         $this->entityManager->flush();
 
-        $data = $this->serializer->serialize($document, 'json', [
-            'groups' => ['document:read'],
-        ]);
+        // 5. Serialize response [cite: 12-02-2026]
+        $data = $this->serializer->serialize($document, 'json', ['groups' => ['document:read']]);
 
         return new JsonResponse($data, Response::HTTP_CREATED, [], true);
+    }
+
+    /**
+     * Private method to manage file moving and renaming [cite: 12-02-2026]
+     */
+    private function handleFileStorage(UploadedFile $file, ?Patient $patient): string
+    {
+        $extension = $file->guessExtension() ?: 'bin';
+        
+        // Professional Naming: p{id}_{uniqid}.{ext} or anonymous_{uniqid}.{ext} [cite: 12-02-2026]
+        $prefix = $patient ? 'p' . $patient->getId() : 'anonymous';
+        $newFilename = $prefix . '_' . uniqid() . '.' . $extension;
+
+        $uploadDir = $this->getParameter('kernel.project_dir') . '/public/uploads/documents';
+        
+        $file->move($uploadDir, $newFilename);
+
+        return $newFilename;
     }
 
     /**
