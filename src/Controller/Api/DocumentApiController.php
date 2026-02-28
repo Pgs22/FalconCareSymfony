@@ -92,6 +92,36 @@ final class DocumentApiController extends AbstractController
         return new JsonResponse($data, Response::HTTP_CREATED, [], true);
     }
 
+    #[Route('/{patientId}/{documentId}', name: 'api_document_delete', methods: ['DELETE'])]
+    public function delete(
+        int $patientId,
+        int $documentId,
+        EntityManagerInterface $entityManager,
+        DocumentRepository $documentRepository
+    ): Response {
+        // 1. Find the document by its unique ID [cite: 12-02-2026]
+        $document = $documentRepository->find($documentId);
+
+        if (!$document) {
+            return $this->json(['error' => 'Document not found'], 404);
+        }
+
+        // 2. Security validation: Does the document belong to this patient? [cite: 12-02-2026]
+        if ($document->getPatient()->getId() !== $patientId) {
+            return $this->json(['error' => 'Document does not belong to this patient'], 403);
+        }
+
+        // 3. Delete physical file
+        $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
+        if (file_exists($filePath)) { unlink($filePath); }
+
+        // 4. Remove from database [cite: 12-02-2026]
+        $entityManager->remove($document);
+        $entityManager->flush();
+
+        return $this->json(['result' => 'deleted', 'id' => $documentId]);
+    }
+
     /**
      * Private method to manage file moving and renaming [cite: 12-02-2026]
      */
