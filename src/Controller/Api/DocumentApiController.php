@@ -92,6 +92,31 @@ final class DocumentApiController extends AbstractController
         return new JsonResponse($data, Response::HTTP_CREATED, [], true);
     }
 
+#[Route('/{id}', name: 'api_document_update', methods: ['PUT'])]
+    public function update(Request $request, Document $document, EntityManagerInterface $entityManager, SerializerInterface $serializer): JsonResponse
+    {
+        // 1. Decode JSON payload [cite: 12-02-2026]
+        $data = json_decode($request->getContent(), true);
+
+        // 2. Update fields if they exist in payload
+        if (isset($data['type'])) {
+            $document->setType($data['type']);
+        }
+        if (isset($data['captureDate'])) {
+            $document->setCaptureDate(new \DateTimeImmutable($data['captureDate']));
+        }
+        if (array_key_exists('description', $data)) {
+            $document->setDescription($data['description']);
+        }
+
+        $entityManager->flush();
+
+        // 3. Serialize response [cite: 12-02-2026]
+        $jsonContent = $serializer->serialize($document, 'json', ['groups' => ['document:read']]);
+
+        return new JsonResponse($jsonContent, Response::HTTP_OK, [], true);
+    }
+
     #[Route('/{patientId}/{documentId}', name: 'api_document_delete', methods: ['DELETE'])]
     public function delete(
         int $patientId,
