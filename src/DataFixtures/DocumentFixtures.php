@@ -14,11 +14,11 @@ class DocumentFixtures extends Fixture
     private $faker;
     private $uploadDir;
 
-    public function __construct(string $projectDir)
+    public function __construct(string $kernelProjectDir)
     {
         $this->faker = Factory::create('es_ES');
         // Define direct folder path [cite: 12-02-2026]
-        $this->uploadDir = $projectDir . '/public/uploads/documents';
+        $this->uploadDir = $kernelProjectDir . '/public/uploads/documents';
     }
 
     public function load(ObjectManager $manager): void
