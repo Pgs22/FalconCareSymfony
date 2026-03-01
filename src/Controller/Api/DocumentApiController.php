@@ -5,7 +5,7 @@ namespace App\Controller\Api;
 use App\Entity\Document;
 use App\Entity\Patient;
 use App\Repository\DocumentRepository;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Repository\PatientRepository;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -14,31 +14,71 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Serializer\SerializerInterface;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 
 #[Route('/api/documents')]
 final class DocumentApiController extends AbstractController
 {
     public function __construct(
-        private readonly EntityManagerInterface $entityManager,
         private readonly DocumentRepository $documentRepository,
         private readonly SerializerInterface $serializer,
     ) {
     }
 
-    #[Route(name: 'api_document_list', methods: ['GET'])]
-    public function index(): JsonResponse
+    /**
+     * To search all documents
+     */
+    #[Route('/index', name: 'api_document_list', methods: ['GET'])]
+    public function getAll(): JsonResponse
     {
-        $documents = $this->documentRepository->findBy([], ['id' => 'ASC']);
-        $data = $this->serializer->serialize($documents, 'json', [
-            'groups' => ['document:read'],
+        // Fetch directly from the repository
+        $documents = $this->documentRepository->getAll();
+        
+        // Use the built-in json method to handle serialization groups efficiently
+        return $this->json($documents, Response::HTTP_OK, [], [
+            'groups' => ['document:read']
         ]);
-
-        return new JsonResponse($data, Response::HTTP_OK, [], true);
     }
 
-    #[Route('/{id}', name: 'api_document_show', requirements: ['id' => '\\d+'], methods: ['GET'])]
-    public function show(Document $document): JsonResponse
+    /**
+     * To search for documents by date YYYY-MM-DD
+     */
+    #[Route('/captureDate', name: 'api_document_search', methods: ['GET'])]
+    public function findByCaptureDate(Request $request): JsonResponse
     {
+        $dateString = $request->query->get('date');
+
+        if (!$dateString) {
+            return $this->json(['error' => 'Date parameter is required'], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            $date = new \DateTime($dateString);
+        } catch (\Exception $e) {
+            return $this->json(['error' => 'Invalid date format. Use Y-m-d'], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Call the repository method, which I have renamed for consistency [cite: 2026-02-12]
+        $documents = $this->documentRepository->findByCaptureDate($date);
+
+        // Consistent response using the built-in json helper [cite: 2026-02-12]
+        return $this->json($documents, Response::HTTP_OK, [], [
+            'groups' => ['document:read']
+        ]);
+    }
+
+    /**
+     * To search for documents by ID
+     */
+    #[Route('/{id}', name: 'api_document_show', requirements: ['id' => '\\d+'], methods: ['GET'])]
+    public function findById(int $id): JsonResponse
+    {
+        $document = $this->documentRepository->findById($id);
+
+        if (!$document) {
+            return $this->json(['message' => 'Document not found'], Response::HTTP_NOT_FOUND);
+        }
+
         $data = $this->serializer->serialize($document, 'json', [
             'groups' => ['document:read'],
         ]);
@@ -46,118 +86,93 @@ final class DocumentApiController extends AbstractController
         return new JsonResponse($data, Response::HTTP_OK, [], true);
     }
 
-    #[Route(name: 'api_document_create', methods: ['POST'])]
-    public function create(Request $request): JsonResponse
+    /**
+     * To create documents and we used method handleFileStorage() to rename with id Patient and 
+     * store the file in the server. The route path to save on database.
+     */
+    #[Route('', name: 'api_document_create', methods: ['POST'])]
+    public function create(Request $request, PatientRepository $patientRepo): JsonResponse
     {
-        // 1. Validate file existence [cite: 12-02-2026]
+        // 1. Get the uploaded file and validate
         $uploadedFile = $request->files->get('file');
         if (!$uploadedFile) {
-            return new JsonResponse(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
+            return $this->json(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
         }
 
-        // 2. Validate patient existence - REQUIRED FOR DOCUMENTS [cite: 12-02-2026]
+        // 2. Find the patient using the repository
         $patientId = $request->request->get('patient');
-        if (!$patientId) {
-            return new JsonResponse(['error' => 'Patient ID is required to upload a document'], Response::HTTP_BAD_REQUEST);
-        }
-
-        $patient = $this->entityManager->getRepository(Patient::class)->find($patientId);
+        $patient = $patientRepo->findById($patientId);
         
         if (!$patient) {
-            return new JsonResponse(['error' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->json(['error' => 'Patient not found'], Response::HTTP_NOT_FOUND);
         }
 
-        // 3. Handle physical file storage [cite: 12-02-2026]
+        // 3. Handle physical file storage
         try {
-            // Calling the private helper method [cite: 12-02-2026]
             $filename = $this->handleFileStorage($uploadedFile, $patient);
         } catch (FileException $e) {
-            return new JsonResponse(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            return $this->json(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        // 4. Create and persist entity [cite: 12-02-2026]
-        $document = new Document();
-        $document->setFilePath($filename);
-        $document->setType((string) $request->request->get('type', ''));
-        $document->setCaptureDate(new \DateTimeImmutable());
-        $document->setDescription($request->request->get('description'));
-        $document->setPatient($patient);
+        // 4. Delegate entity creation to the document repository
+        $document = $this->documentRepository->create(
+            $filename, 
+            $request->request->all(), 
+            $patient
+        );
 
-        $this->entityManager->persist($document);
-        $this->entityManager->flush();
-
-        // 5. Serialize response [cite: 12-02-2026]
-        $data = $this->serializer->serialize($document, 'json', ['groups' => ['document:read']]);
-
-        return new JsonResponse($data, Response::HTTP_CREATED, [], true);
+        // 5. Use the simplified $this->json() helper with serialization groups
+        return $this->json($document, Response::HTTP_CREATED, [], [
+            'groups' => ['document:read']
+        ]);
     }
 
-#[Route('/{id}', name: 'api_document_update', methods: ['PUT'])]
-    public function update(Request $request, Document $document, EntityManagerInterface $entityManager, SerializerInterface $serializer): JsonResponse
+    #[Route('/{id}', name: 'api_document_update', methods: ['PUT'])]
+    public function update(Request $request, int $id): JsonResponse
     {
-        // 1. Decode JSON payload [cite: 12-02-2026]
+        $document = $this->documentRepository->findById($id);
+
+        if (!$document) {
+            return $this->json(['message' => 'Document not found'], Response::HTTP_NOT_FOUND);
+        }
+
         $data = json_decode($request->getContent(), true);
 
-        // 2. Update fields if they exist in payload
-        if (isset($data['type'])) {
-            $document->setType($data['type']);
-        }
-        if (isset($data['captureDate'])) {
-            $document->setCaptureDate(new \DateTimeImmutable($data['captureDate']));
-        }
-        if (array_key_exists('description', $data)) {
-            $document->setDescription($data['description']);
-        }
+        $this->documentRepository->edit($document, $data);
 
-        $entityManager->flush();
-
-        // 3. Serialize response [cite: 12-02-2026]
-        $jsonContent = $serializer->serialize($document, 'json', ['groups' => ['document:read']]);
+        $jsonContent = $this->serializer->serialize($document, 'json', ['groups' => ['document:read']]);
 
         return new JsonResponse($jsonContent, Response::HTTP_OK, [], true);
     }
 
     #[Route('/{patientId}/{documentId}', name: 'api_document_delete', methods: ['DELETE'])]
-    public function delete(
-        int $patientId,
-        int $documentId,
-        EntityManagerInterface $entityManager,
-        DocumentRepository $documentRepository
-    ): Response {
-        // 1. Find the document by its unique ID [cite: 12-02-2026]
-        $document = $documentRepository->find($documentId);
+    public function delete(int $patientId, int $documentId): JsonResponse
+    {
+        $document = $this->documentRepository->findById($documentId);
 
         if (!$document) {
-            return $this->json(['error' => 'Document not found'], 404);
+            return $this->json(['error' => 'Document not found'], Response::HTTP_NOT_FOUND);
         }
 
-        // 2. Security validation: Does the document belong to this patient? [cite: 12-02-2026]
-        if ($document->getPatient()->getId() !== $patientId) {
-            return $this->json(['error' => 'Document does not belong to this patient'], 403);
+        if (!$document->getPatient() || $document->getPatient()->getId() !== $patientId) {
+            return $this->json(['error' => 'Document does not belong to this patient'], Response::HTTP_FORBIDDEN);
         }
 
-        // 3. Delete physical file
         $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
-        if (file_exists($filePath)) { unlink($filePath); }
+        if (file_exists($filePath)) {
+            unlink($filePath);
+        }
 
-        // 4. Remove from database [cite: 12-02-2026]
-        $entityManager->remove($document);
-        $entityManager->flush();
+        $this->documentRepository->delete($document);
 
-        return $this->json(['result' => 'deleted', 'id' => $documentId]);
+        return new JsonResponse(['result' => 'deleted', 'id' => $documentId], Response::HTTP_OK);
     }
 
-    /**
-     * Private method to manage file moving and renaming [cite: 12-02-2026]
-     */
-    private function handleFileStorage(UploadedFile $file, ?Patient $patient): string
+    private function handleFileStorage(UploadedFile $file, Patient $patient): string
     {
         $extension = $file->guessExtension() ?: 'bin';
-        
-        // Professional Naming: p{id}_{uniqid}.{ext} or anonymous_{uniqid}.{ext} [cite: 12-02-2026]
-        $prefix = $patient ? 'p' . $patient->getId() : 'anonymous';
+        $prefix = 'p' . $patient->getId();
         $newFilename = $prefix . '_' . uniqid() . '.' . $extension;
-
         $uploadDir = $this->getParameter('kernel.project_dir') . '/public/uploads/documents';
         
         $file->move($uploadDir, $newFilename);
@@ -165,13 +180,15 @@ final class DocumentApiController extends AbstractController
         return $newFilename;
     }
 
-    /**
-     * Return the raw file for a document. Useful for downloads.
-     */
     #[Route('/{id}/download', name: 'api_document_download', requirements: ['id' => '\\d+'], methods: ['GET'])]
     public function download(Document $document): Response
     {
-        $file = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
-        return $this->file($file);
+        $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
+        
+        if (!file_exists($filePath)) {
+            throw $this->createNotFoundException('The file does not exist');
+        }
+
+        return $this->file($filePath);
     }
 }
