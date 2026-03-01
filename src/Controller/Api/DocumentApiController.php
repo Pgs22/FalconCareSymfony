@@ -14,6 +14,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Serializer\SerializerInterface;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 
 #[Route('/api/documents')]
 final class DocumentApiController extends AbstractController
@@ -24,22 +25,26 @@ final class DocumentApiController extends AbstractController
     ) {
     }
 
-    // --- Updated Route to /index to match PatientController [cite: 12-02-2026] ---
+    /**
+     * To search all documents
+     */
     #[Route('/index', name: 'api_document_list', methods: ['GET'])]
-    public function index(): JsonResponse
+    public function getAll(): JsonResponse
     {
-        $documents = $this->documentRepository->findAllDocuments();
+        // Fetch directly from the repository
+        $documents = $this->documentRepository->getAll();
         
-        $data = $this->serializer->serialize($documents, 'json', [
-            'groups' => ['document:read'],
+        // Use the built-in json method to handle serialization groups efficiently
+        return $this->json($documents, Response::HTTP_OK, [], [
+            'groups' => ['document:read']
         ]);
-
-        return new JsonResponse($data, Response::HTTP_OK, [], true);
     }
 
-    // --- Added clearer path for search [cite: 12-02-2026] ---
-    #[Route('/search/date', name: 'api_document_search', methods: ['GET'])]
-    public function searchByDate(Request $request): JsonResponse
+    /**
+     * To search for documents by date YYYY-MM-DD
+     */
+    #[Route('/captureDate', name: 'api_document_search', methods: ['GET'])]
+    public function findByCaptureDate(Request $request): JsonResponse
     {
         $dateString = $request->query->get('date');
 
@@ -53,18 +58,20 @@ final class DocumentApiController extends AbstractController
             return $this->json(['error' => 'Invalid date format. Use Y-m-d'], Response::HTTP_BAD_REQUEST);
         }
 
-        $documents = $this->documentRepository->findByDate($date);
+        // Call the repository method, which I have renamed for consistency [cite: 2026-02-12]
+        $documents = $this->documentRepository->findByCaptureDate($date);
 
-        $data = $this->serializer->serialize($documents, 'json', [
-            'groups' => ['document:read'],
+        // Consistent response using the built-in json helper [cite: 2026-02-12]
+        return $this->json($documents, Response::HTTP_OK, [], [
+            'groups' => ['document:read']
         ]);
-
-        return new JsonResponse($data, Response::HTTP_OK, [], true);
     }
 
-    // --- Rest of the methods remain the same ---
+    /**
+     * To search for documents by ID
+     */
     #[Route('/{id}', name: 'api_document_show', requirements: ['id' => '\\d+'], methods: ['GET'])]
-    public function show(int $id): JsonResponse
+    public function findById(int $id): JsonResponse
     {
         $document = $this->documentRepository->findById($id);
 
@@ -79,36 +86,45 @@ final class DocumentApiController extends AbstractController
         return new JsonResponse($data, Response::HTTP_OK, [], true);
     }
 
-    #[Route('/create', name: 'api_document_create', methods: ['POST'])]
+    /**
+     * To create documents and we used method handleFileStorage() to rename with id Patient and 
+     * store the file in the server. The route path to save on database.
+     */
+    #[Route('', name: 'api_document_create', methods: ['POST'])]
     public function create(Request $request, PatientRepository $patientRepo): JsonResponse
     {
+        // 1. Get the uploaded file and validate
         $uploadedFile = $request->files->get('file');
         if (!$uploadedFile) {
-            return new JsonResponse(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
+            return $this->json(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
         }
 
+        // 2. Find the patient using the repository
         $patientId = $request->request->get('patient');
         $patient = $patientRepo->findById($patientId);
         
         if (!$patient) {
-            return new JsonResponse(['error' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->json(['error' => 'Patient not found'], Response::HTTP_NOT_FOUND);
         }
 
+        // 3. Handle physical file storage
         try {
             $filename = $this->handleFileStorage($uploadedFile, $patient);
         } catch (FileException $e) {
-            return new JsonResponse(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            return $this->json(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
+        // 4. Delegate entity creation to the document repository
         $document = $this->documentRepository->create(
             $filename, 
             $request->request->all(), 
             $patient
         );
 
-        $data = $this->serializer->serialize($document, 'json', ['groups' => ['document:read']]);
-
-        return new JsonResponse($data, Response::HTTP_CREATED, [], true);
+        // 5. Use the simplified $this->json() helper with serialization groups
+        return $this->json($document, Response::HTTP_CREATED, [], [
+            'groups' => ['document:read']
+        ]);
     }
 
     #[Route('/{id}', name: 'api_document_update', methods: ['PUT'])]

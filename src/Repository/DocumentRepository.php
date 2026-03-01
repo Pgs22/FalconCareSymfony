@@ -6,6 +6,7 @@ use App\Entity\Document;
 use App\Entity\Patient;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 
 /**
  * @extends ServiceEntityRepository<Document>
@@ -19,7 +20,7 @@ class DocumentRepository extends ServiceEntityRepository
 
     // --- READ OPERATIONS [cite: 12-02-2026] ---
 
-    public function findAllDocuments(): array
+    public function getAll(): array
     {
         return $this->createQueryBuilder('d')
             ->orderBy('d.id', 'ASC')
@@ -36,20 +37,35 @@ class DocumentRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
-    public function findByDate(\DateTime $date): array
+    /**
+     * Summary of findByCaptureDate
+     * Searches documents by capture date using pagination to optimize performance.
+     * 1. Defines the 24-hour time range (from 00:00:00 to 00:00:00 the next day)
+     * 2. Uses Doctrine Paginator to avoid loading thousands of objects into memory
+     * 3. Allows the frontend (Angular) to request specific pages and limit results per page [cite: 2026-02-12].
+     * @param \DateTime $date
+     * @param int $page
+     * @param int $limit
+     * @return Paginator<Document>
+     */
+    public function findByCaptureDate(\DateTime $date, int $page = 1, int $limit = 10): Paginator
     {
         $date->setTime(0, 0, 0);
         $nextDay = clone $date;
         $nextDay->modify('+1 day');
 
-        return $this->createQueryBuilder('d')
+        $query = $this->createQueryBuilder('d')
             ->andWhere('d.captureDate >= :date')
             ->andWhere('d.captureDate < :nextDay')
             ->setParameter('date', $date)
             ->setParameter('nextDay', $nextDay)
             ->orderBy('d.captureDate', 'DESC')
-            ->getQuery()
-            ->getResult();
+            ->getQuery();
+
+        $query->setFirstResult(($page - 1) * $limit)
+            ->setMaxResults($limit);
+
+        return new Paginator($query);
     }
 
     // --- WRITE OPERATIONS [cite: 12-02-2026] ---
