@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use App\Repository\OdontogramRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: OdontogramRepository::class)]
@@ -13,9 +15,6 @@ class Odontogram
     #[ORM\Column]
     private ?int $id = null;
 
-    #[ORM\Column(length: 50, nullable: true)]
-    private ?string $toothSurface = null;
-
     #[ORM\Column(length: 20)]
     private ?string $status = null;
 
@@ -23,29 +22,20 @@ class Odontogram
     #[ORM\JoinColumn(nullable: false)]
     private ?Appointment $visit = null;
 
-    #[ORM\ManyToOne(inversedBy: 'odontograms')]
-    #[ORM\JoinColumn(nullable: false)]
-    private ?Tooth $tooth = null;
+    /**
+     * @var Collection<int, OdontogramaDetail>
+     */
+    #[ORM\OneToMany(targetEntity: OdontogramaDetail::class, mappedBy: 'odontograma')]
+    private Collection $odontogramaDetails;
 
-    #[ORM\ManyToOne(inversedBy: 'odontograms')]
-    #[ORM\JoinColumn(nullable: false)]
-    private ?Pathology $pathology = null;
+    public function __construct()
+    {
+        $this->odontogramaDetails = new ArrayCollection();
+    }
 
     public function getId(): ?int
     {
         return $this->id;
-    }
-
-    public function getToothSurface(): ?string
-    {
-        return $this->toothSurface;
-    }
-
-    public function setToothSurface(?string $toothSurface): static
-    {
-        $this->toothSurface = $toothSurface;
-
-        return $this;
     }
 
     public function getStatus(): ?string
@@ -72,26 +62,33 @@ class Odontogram
         return $this;
     }
 
-    public function getTooth(): ?Tooth
+
+    /**
+     * @return Collection<int, OdontogramaDetail>
+     */
+    public function getOdontogramaDetails(): Collection
     {
-        return $this->tooth;
+        return $this->odontogramaDetails;
     }
 
-    public function setTooth(?Tooth $tooth): static
+    public function addOdontogramaDetail(OdontogramaDetail $odontogramaDetail): static
     {
-        $this->tooth = $tooth;
+        if (!$this->odontogramaDetails->contains($odontogramaDetail)) {
+            $this->odontogramaDetails->add($odontogramaDetail);
+            $odontogramaDetail->setOdontograma($this);
+        }
 
         return $this;
     }
 
-    public function getPathology(): ?Pathology
+    public function removeOdontogramaDetail(OdontogramaDetail $odontogramaDetail): static
     {
-        return $this->pathology;
-    }
-
-    public function setPathology(?Pathology $pathology): static
-    {
-        $this->pathology = $pathology;
+        if ($this->odontogramaDetails->removeElement($odontogramaDetail)) {
+            // set the owning side to null (unless already changed)
+            if ($odontogramaDetail->getOdontograma() === $this) {
+                $odontogramaDetail->setOdontograma(null);
+            }
+        }
 
         return $this;
     }

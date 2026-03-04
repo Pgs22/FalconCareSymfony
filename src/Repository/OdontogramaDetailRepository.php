@@ -2,39 +2,39 @@
 
 namespace App\Repository;
 
-use App\Entity\Tooth;
+use App\Entity\OdontogramaDetail;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
- * @extends ServiceEntityRepository<Tooth>
+ * @extends ServiceEntityRepository<OdontogramaDetail>
  */
-class ToothRepository extends ServiceEntityRepository
+class OdontogramaDetailRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
     {
-        parent::__construct($registry, Tooth::class);
+        parent::__construct($registry, OdontogramaDetail::class);
     }
 
     //    /**
-    //     * @return Tooth[] Returns an array of Tooth objects
+    //     * @return OdontogramaDetail[] Returns an array of OdontogramaDetail objects
     //     */
     //    public function findByExampleField($value): array
     //    {
-    //        return $this->createQueryBuilder('t')
-    //            ->andWhere('t.exampleField = :val')
+    //        return $this->createQueryBuilder('o')
+    //            ->andWhere('o.exampleField = :val')
     //            ->setParameter('val', $value)
-    //            ->orderBy('t.id', 'ASC')
+    //            ->orderBy('o.id', 'ASC')
     //            ->setMaxResults(10)
     //            ->getQuery()
     //            ->getResult()
     //        ;
     //    }
 
-    //    public function findOneBySomeField($value): ?Tooth
+    //    public function findOneBySomeField($value): ?OdontogramaDetail
     //    {
-    //        return $this->createQueryBuilder('t')
-    //            ->andWhere('t.exampleField = :val')
+    //        return $this->createQueryBuilder('o')
+    //            ->andWhere('o.exampleField = :val')
     //            ->setParameter('val', $value)
     //            ->getQuery()
     //            ->getOneOrNullResult()
