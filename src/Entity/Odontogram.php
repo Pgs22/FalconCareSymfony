@@ -28,6 +28,10 @@ class Odontogram
     #[ORM\OneToMany(targetEntity: OdontogramaDetail::class, mappedBy: 'odontograma')]
     private Collection $odontogramaDetails;
 
+    #[ORM\ManyToOne(inversedBy: 'odontograms')]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?Treatment $treatment = null;
+
     public function __construct()
     {
         $this->odontogramaDetails = new ArrayCollection();
@@ -89,6 +93,18 @@ class Odontogram
                 $odontogramaDetail->setOdontograma(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getTreatment(): ?Treatment
+    {
+        return $this->treatment;
+    }
+
+    public function setTreatment(?Treatment $treatment): static
+    {
+        $this->treatment = $treatment;
 
         return $this;
     }
