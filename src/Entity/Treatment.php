@@ -43,10 +43,17 @@ class Treatment
     #[ORM\Column(length: 20, nullable: true)]
     private ?string $status = null;
 
+    /**
+     * @var Collection<int, Odontogram>
+     */
+    #[ORM\OneToMany(targetEntity: Odontogram::class, mappedBy: 'treatment')]
+    private Collection $odontograms;
+
     public function __construct()
     {
         $this->appointments = new ArrayCollection();
         $this->pathologies = new ArrayCollection();
+        $this->odontograms = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -164,6 +171,36 @@ class Treatment
     public function setStatus(?string $status): static
     {
         $this->status = $status;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Odontogram>
+     */
+    public function getOdontograms(): Collection
+    {
+        return $this->odontograms;
+    }
+
+    public function addOdontogram(Odontogram $odontogram): static
+    {
+        if (!$this->odontograms->contains($odontogram)) {
+            $this->odontograms->add($odontogram);
+            $odontogram->setTreatment($this);
+        }
+
+        return $this;
+    }
+
+    public function removeOdontogram(Odontogram $odontogram): static
+    {
+        if ($this->odontograms->removeElement($odontogram)) {
+            // set the owning side to null (unless already changed)
+            if ($odontogram->getTreatment() === $this) {
+                $odontogram->setTreatment(null);
+            }
+        }
 
         return $this;
     }

@@ -36,10 +36,17 @@ class Pathology
     #[ORM\Column(length: 20, nullable: true)]
     private ?string $visualType = null;
 
+    /**
+     * @var Collection<int, OdontogramaDetail>
+     */
+    #[ORM\OneToMany(targetEntity: OdontogramaDetail::class, mappedBy: 'pathology')]
+    private Collection $odontogramaDetails;
+
     public function __construct()
     {
         $this->odontograms = new ArrayCollection();
         $this->treatments = new ArrayCollection();
+        $this->odontogramaDetails = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -136,6 +143,36 @@ class Pathology
     public function setVisualType(?string $visualType): static
     {
         $this->visualType = $visualType;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, OdontogramaDetail>
+     */
+    public function getOdontogramaDetails(): Collection
+    {
+        return $this->odontogramaDetails;
+    }
+
+    public function addOdontogramaDetail(OdontogramaDetail $odontogramaDetail): static
+    {
+        if (!$this->odontogramaDetails->contains($odontogramaDetail)) {
+            $this->odontogramaDetails->add($odontogramaDetail);
+            $odontogramaDetail->setPathology($this);
+        }
+
+        return $this;
+    }
+
+    public function removeOdontogramaDetail(OdontogramaDetail $odontogramaDetail): static
+    {
+        if ($this->odontogramaDetails->removeElement($odontogramaDetail)) {
+            // set the owning side to null (unless already changed)
+            if ($odontogramaDetail->getPathology() === $this) {
+                $odontogramaDetail->setPathology(null);
+            }
+        }
 
         return $this;
     }
