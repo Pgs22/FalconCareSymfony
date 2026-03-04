@@ -31,9 +31,22 @@ class Treatment
     #[ORM\OneToMany(targetEntity: Appointment::class, mappedBy: 'treatment')]
     private Collection $appointments;
 
+    #[ORM\Column(nullable: true)]
+    private ?int $lastOdontogramId = null;
+
+    /**
+     * @var Collection<int, Pathology>
+     */
+    #[ORM\ManyToMany(targetEntity: Pathology::class, inversedBy: 'treatments')]
+    private Collection $pathologies;
+
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $status = null;
+
     public function __construct()
     {
         $this->appointments = new ArrayCollection();
+        $this->pathologies = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -103,6 +116,54 @@ class Treatment
                 $appointment->setTreatment(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getLastOdontogramId(): ?int
+    {
+        return $this->lastOdontogramId;
+    }
+
+    public function setLastOdontogramId(?int $lastOdontogramId): static
+    {
+        $this->lastOdontogramId = $lastOdontogramId;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Pathology>
+     */
+    public function getPathologies(): Collection
+    {
+        return $this->pathologies;
+    }
+
+    public function addPathology(Pathology $pathology): static
+    {
+        if (!$this->pathologies->contains($pathology)) {
+            $this->pathologies->add($pathology);
+        }
+
+        return $this;
+    }
+
+    public function removePathology(Pathology $pathology): static
+    {
+        $this->pathologies->removeElement($pathology);
+
+        return $this;
+    }
+
+    public function getStatus(): ?string
+    {
+        return $this->status;
+    }
+
+    public function setStatus(?string $status): static
+    {
+        $this->status = $status;
 
         return $this;
     }

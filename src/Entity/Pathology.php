@@ -27,9 +27,19 @@ class Pathology
     #[ORM\OneToMany(targetEntity: Odontogram::class, mappedBy: 'pathology')]
     private Collection $odontograms;
 
+    /**
+     * @var Collection<int, Treatment>
+     */
+    #[ORM\ManyToMany(targetEntity: Treatment::class, mappedBy: 'pathologies')]
+    private Collection $treatments;
+
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $visualType = null;
+
     public function __construct()
     {
         $this->odontograms = new ArrayCollection();
+        $this->treatments = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -87,6 +97,45 @@ class Pathology
                 $odontogram->setPathology(null);
             }
         }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Treatment>
+     */
+    public function getTreatments(): Collection
+    {
+        return $this->treatments;
+    }
+
+    public function addTreatment(Treatment $treatment): static
+    {
+        if (!$this->treatments->contains($treatment)) {
+            $this->treatments->add($treatment);
+            $treatment->addPathology($this);
+        }
+
+        return $this;
+    }
+
+    public function removeTreatment(Treatment $treatment): static
+    {
+        if ($this->treatments->removeElement($treatment)) {
+            $treatment->removePathology($this);
+        }
+
+        return $this;
+    }
+
+    public function getVisualType(): ?string
+    {
+        return $this->visualType;
+    }
+
+    public function setVisualType(?string $visualType): static
+    {
+        $this->visualType = $visualType;
 
         return $this;
     }
