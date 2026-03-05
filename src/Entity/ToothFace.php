@@ -16,6 +16,10 @@ class ToothFace
     #[ORM\Column(length: 10)]
     private ?string $faceName = null;
 
+    #[ORM\ManyToOne(inversedBy: 'toothFaces')]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?OdontogramaDetail $odontogramaDetail = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -29,6 +33,18 @@ class ToothFace
     public function setFaceName(string $faceName): static
     {
         $this->faceName = $faceName;
+
+        return $this;
+    }
+
+    public function getOdontogramaDetail(): ?OdontogramaDetail
+    {
+        return $this->odontogramaDetail;
+    }
+
+    public function setOdontogramaDetail(?OdontogramaDetail $odontogramaDetail): static
+    {
+        $this->odontogramaDetail = $odontogramaDetail;
 
         return $this;
     }
