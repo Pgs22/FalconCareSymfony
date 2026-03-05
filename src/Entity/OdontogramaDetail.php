@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use App\Repository\OdontogramaDetailRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: OdontogramaDetailRepository::class)]
@@ -23,6 +25,17 @@ class OdontogramaDetail
     #[ORM\ManyToOne(inversedBy: 'odontogramaDetails')]
     #[ORM\JoinColumn(nullable: false)]
     private ?Pathology $pathology = null;
+
+    /**
+     * @var Collection<int, ToothFace>
+     */
+    #[ORM\OneToMany(targetEntity: ToothFace::class, mappedBy: 'odontogramaDetail')]
+    private Collection $toothFaces;
+
+    public function __construct()
+    {
+        $this->toothFaces = new ArrayCollection();
+    }
 
     public function getId(): ?int
     {
@@ -61,6 +74,36 @@ class OdontogramaDetail
     public function setPathology(?Pathology $pathology): static
     {
         $this->pathology = $pathology;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, ToothFace>
+     */
+    public function getToothFaces(): Collection
+    {
+        return $this->toothFaces;
+    }
+
+    public function addToothFace(ToothFace $toothFace): static
+    {
+        if (!$this->toothFaces->contains($toothFace)) {
+            $this->toothFaces->add($toothFace);
+            $toothFace->setOdontogramaDetail($this);
+        }
+
+        return $this;
+    }
+
+    public function removeToothFace(ToothFace $toothFace): static
+    {
+        if ($this->toothFaces->removeElement($toothFace)) {
+            // set the owning side to null (unless already changed)
+            if ($toothFace->getOdontogramaDetail() === $this) {
+                $toothFace->setOdontogramaDetail(null);
+            }
+        }
 
         return $this;
     }

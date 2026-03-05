@@ -29,7 +29,7 @@ class Odontogram
     private Collection $odontogramaDetails;
 
     #[ORM\ManyToOne(inversedBy: 'odontograms')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: true)]
     private ?Treatment $treatment = null;
 
     public function __construct()
