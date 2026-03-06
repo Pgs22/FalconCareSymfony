@@ -8,8 +8,9 @@ use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
 use Faker\Factory;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Doctrine\Bundle\FixturesBundle\FixtureGroupInterface;
 
-class DocumentFixtures extends Fixture
+class DocumentFixtures extends Fixture implements FixtureGroupInterface
 {
     private $faker;
     private $uploadDir;
@@ -64,5 +65,9 @@ class DocumentFixtures extends Fixture
         }
 
         $manager->flush(); // Save all documents to database [cite: 12-02-2026]
+    }
+    public static function getGroups(): array
+    {
+        return ['group_docs'];
     }
 }

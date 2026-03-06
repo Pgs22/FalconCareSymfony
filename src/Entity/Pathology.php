@@ -22,12 +22,6 @@ class Pathology
     private ?string $protocolColor = null;
 
     /**
-     * @var Collection<int, Odontogram>
-     */
-    #[ORM\OneToMany(targetEntity: Odontogram::class, mappedBy: 'pathology')]
-    private Collection $odontograms;
-
-    /**
      * @var Collection<int, Treatment>
      */
     #[ORM\ManyToMany(targetEntity: Treatment::class, mappedBy: 'pathologies')]
@@ -44,7 +38,6 @@ class Pathology
 
     public function __construct()
     {
-        $this->odontograms = new ArrayCollection();
         $this->treatments = new ArrayCollection();
         $this->odontogramaDetails = new ArrayCollection();
     }
@@ -74,36 +67,6 @@ class Pathology
     public function setProtocolColor(string $protocolColor): static
     {
         $this->protocolColor = $protocolColor;
-
-        return $this;
-    }
-
-    /**
-     * @return Collection<int, Odontogram>
-     */
-    public function getOdontograms(): Collection
-    {
-        return $this->odontograms;
-    }
-
-    public function addOdontogram(Odontogram $odontogram): static
-    {
-        if (!$this->odontograms->contains($odontogram)) {
-            $this->odontograms->add($odontogram);
-            $odontogram->setPathology($this);
-        }
-
-        return $this;
-    }
-
-    public function removeOdontogram(Odontogram $odontogram): static
-    {
-        if ($this->odontograms->removeElement($odontogram)) {
-            // set the owning side to null (unless already changed)
-            if ($odontogram->getPathology() === $this) {
-                $odontogram->setPathology(null);
-            }
-        }
 
         return $this;
     }
