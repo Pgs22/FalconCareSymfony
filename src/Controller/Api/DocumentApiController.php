@@ -31,10 +31,8 @@ final class DocumentApiController extends AbstractController
     #[Route('/index', name: 'api_document_list', methods: ['GET'])]
     public function getAll(): JsonResponse
     {
-        // Fetch directly from the repository
         $documents = $this->documentRepository->getAll();
-        
-        // Use the built-in json method to handle serialization groups efficiently
+
         return $this->json($documents, Response::HTTP_OK, [], [
             'groups' => ['document:read']
         ]);
@@ -58,10 +56,8 @@ final class DocumentApiController extends AbstractController
             return $this->json(['error' => 'Invalid date format. Use Y-m-d'], Response::HTTP_BAD_REQUEST);
         }
 
-        // Call the repository method, which I have renamed for consistency [cite: 2026-02-12]
         $documents = $this->documentRepository->findByCaptureDate($date);
 
-        // Consistent response using the built-in json helper [cite: 2026-02-12]
         return $this->json($documents, Response::HTTP_OK, [], [
             'groups' => ['document:read']
         ]);
@@ -93,13 +89,11 @@ final class DocumentApiController extends AbstractController
     #[Route('', name: 'api_document_create', methods: ['POST'])]
     public function create(Request $request, PatientRepository $patientRepo): JsonResponse
     {
-        // 1. Get the uploaded file and validate
         $uploadedFile = $request->files->get('file');
         if (!$uploadedFile) {
             return $this->json(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
         }
 
-        // 2. Find the patient using the repository
         $patientId = $request->request->get('patient');
         $patient = $patientRepo->findById($patientId);
         
@@ -107,21 +101,18 @@ final class DocumentApiController extends AbstractController
             return $this->json(['error' => 'Patient not found'], Response::HTTP_NOT_FOUND);
         }
 
-        // 3. Handle physical file storage
         try {
             $filename = $this->handleFileStorage($uploadedFile, $patient);
         } catch (FileException $e) {
             return $this->json(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        // 4. Delegate entity creation to the document repository
         $document = $this->documentRepository->create(
             $filename, 
             $request->request->all(), 
             $patient
         );
 
-        // 5. Use the simplified $this->json() helper with serialization groups
         return $this->json($document, Response::HTTP_CREATED, [], [
             'groups' => ['document:read']
         ]);
@@ -190,5 +181,34 @@ final class DocumentApiController extends AbstractController
         }
 
         return $this->file($filePath);
+    }
+
+    /**
+     * We search for patient documents by their NIF field
+     */
+    #[Route('/patient-docs/{identityDocument}', name: 'api_documents_by_nif', methods: ['GET'])]
+    public function findByIdentityDocumentPatient(
+        string $identityDocument, 
+        PatientRepository $patientRepo,
+        DocumentRepository $documentRepo
+    ): JsonResponse {
+
+        $patients = $patientRepo->findByIdentityDocument($identityDocument);
+        
+        if (empty($patients)) {
+            return $this->json(['error' => 'Paciente no encontrado'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Al ser un array lo que devuelve tu repo, pillamos el primero
+        $patient = $patients[0];
+
+        // Buscamos los documentos asociados
+        $documents = $documentRepo->findBy(['patient' => $patient]);
+
+        // En lugar de hacer un foreach, pasamos la colección directamente
+        // Symfony usará los Groups para saber qué campos mostrar
+        return $this->json($documents, Response::HTTP_OK, [], [
+            'groups' => ['document:read']
+        ]);
     }
 }
