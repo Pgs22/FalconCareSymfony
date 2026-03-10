@@ -869,17 +869,17 @@ All features are listed below with a unique identifier (section number) and the 
 
 | Aspect | Description |
 |--------|-------------|
-| **What it does** | Lateral “Appointment Detail” panel with: Patient (selector “Select existing patient…” or “NEW PATIENT”), Appointment date, Start time, Duration (30/60/90/120 min), Doctor (selector), BOX (selector), Pathology/Reason (selector: Cleaning, Root Canal, Orthodontics, Extraction…), Clinical notes (textarea). Notice “5 min added for BOX disinfection”. “Cancel” and “Save Appointment” buttons. |
+| **What it does** | Lateral “Appointment Detail” panel with: Patient (selector “Select existing patient…” or “NEW PATIENT”), Appointment date, Start time, Duration (30/60/90/120 min, optional when procedure type is set), Doctor (selector), Box (selector), Procedure type / Pathology type (PathologyType selector, e.g. “First visit”, “Follow-up”), Treatment (selector, e.g. “Initial treatment”, “Root canal”), Pathology/Reason (selector or free text), Clinical notes / observations (textarea). When a PathologyType and Treatment are selected and duration is left empty, the system sets duration from the PathologyType default (see §6.1). Notice “5 min added for BOX disinfection”. “Cancel” and “Save Appointment” buttons. |
 | **Who uses it** | User creating or editing an appointment. |
-| **Inputs** | Value for each field; patient selection (existing or new). |
-| **Outputs** | Appointment created or updated; overlap and buffer validation. |
-| **Business rules** | Patient required; date, time, duration, doctor and box required; no overlap in the same box; 5-minute buffer automatically added at the end; selected duration may determine the occupied slot. |
+| **Inputs** | Value for each field; patient selection (existing or new); optional procedure type and treatment for default duration. |
+| **Outputs** | Appointment created or updated; overlap and buffer validation; duration filled from pathology type default when applicable (see §6.1). |
+| **Business rules** | Patient required; date, start time, doctor and box required; duration required or defaulted from PathologyType when procedure type (and optionally treatment) is selected; no overlap in the same box; 5-minute buffer automatically added at the end. |
 
 **Wireframe:** W4 (right panel “Appointment Detail”).
 
 **Acceptance criteria**
 
-- The panel includes: Patient (selector “Select existing patient…” or “NEW PATIENT”), Appointment date, Start time, Duration (e.g. 30/60/90/120 min), Doctor (selector), Box (selector), Pathology/Reason (selector), Clinical notes (textarea). A notice states that 5 minutes are added for box disinfection. “Cancel” and “Save Appointment” buttons are present. All required fields (patient, date, start time, duration, doctor, box) are validated; overlapping or buffer violation shows a clear error. On success, the appointment is created or updated and the grid refreshes. “NEW PATIENT” opens the new patient flow and, on success, the new patient can be selected for the appointment.
+- The panel includes: Patient (selector “Select existing patient…” or “NEW PATIENT”), Appointment date, Start time, Duration (e.g. 30/60/90/120 min), Doctor (selector), Box (selector), Procedure type (PathologyType, e.g. “First visit”), Treatment (e.g. “Initial treatment”), Pathology/Reason (selector), Clinical notes / observations (textarea). A notice states that 5 minutes are added for box disinfection. “Cancel” and “Save Appointment” buttons are present. When the user selects a procedure type and treatment and leaves duration empty, the system sets duration from the pathology type’s default (§6.1). All required fields are validated; overlapping or buffer violation shows a clear error. On success, the appointment is created or updated and the grid refreshes. “NEW PATIENT” opens the new patient flow and, on success, the new patient can be selected for the appointment.
 
 ---
 
@@ -918,13 +918,26 @@ This table maps each wireframe to its features (short names). For the reverse ma
 
 - **User**: roles (clinician, staff, admin); name, photo, role shown in the UI.
 - **Patient**: ID, name, age, photo, status (e.g. Active Treatment, Incomplete registration); contact data; allergies; diseases/conditions; visit history; files/X-rays.
-- **Appointment**: patient, doctor, box, date, start time, duration; status (Confirmed, In progress, Arrived…); pathology/reason; clinical notes; 5-min post-appointment buffer.
+- **Appointment**: patient, doctor, box, date, start time; observations (TEXT); duration_minutes (INT); treatment_id (nullable when using PathologyType for default duration); status (Confirmed, In progress, Arrived…); pathology/reason; 5-min post-appointment buffer. When duration is empty and a procedure type is selected, the controller sets duration from PathologyType (see §6.1).
 - **Box**: identifier (1, 2…), room name (e.g. Orthodontics, Surgery); time slots.
-- **Visit**: date; treatment performed; associated odontogram; notes.
-- **Odontogram**: linked to visit/patient; teeth by quadrant; status per surface (healthy, caries, amalgam, composite, crown, missing); change history.
+- **Visit**: logical concept (one appointment = one visit); date; treatment performed; associated odontogram; notes. Implemented as or linked to Appointment in the backend.
+- **Odontogram**: linked to visit (Appointment)/patient; teeth by quadrant; status per surface (healthy, caries, amalgam, composite, crown, missing); change history.
+- **OdontogramaDetail**: per-tooth record within an odontogram; tooth number (FDI/Universal); linked to Odontogram and Pathology; has a collection of **ToothFace** (one per surface).
+- **ToothFace**: id; faceName (e.g. occlusal, mesial, distal, buccal, lingual); many-to-one to OdontogramaDetail. Represents a single tooth surface; each OdontogramaDetail can have multiple ToothFace records.
+- **PathologyType**: id; name (e.g. “First visit”, “Follow-up”); default_duration (integer, minutes). Used when scheduling to prefill appointment duration.
+- **Pathology**: id; description; protocolColor; visualType; many-to-many Treatment; one-to-many OdontogramaDetail. **pathology_type_id** (many-to-one PathologyType, optional): for scheduling and default duration.
+- **Treatment**: linked to pathologies and to Appointment; e.g. “Initial treatment”, “Root canal”. Treatment has treatmentName, description, estimatedDuration.
 - **Inventory/Stock**: per box or room; level in %; “low” threshold; alerts; restock request.
 - **Allergy**: type (Penicillin, Latex, etc.); severity (critical vs. precaution); linked to patient.
 - **File/document**: type (X-ray, document); name, date, size; linked to patient; format and max size (e.g. 15MB).
+
+### 6.1 Appointment controller: default duration from PathologyType
+
+When creating a new appointment with a selected **procedure type** (PathologyType) and **treatment** (Treatment):
+
+- **Example:** PathologyType “First visit” with Treatment “Initial treatment”.
+- If the **duration** field is empty or not supplied, the controller sets the appointment duration from the selected pathology type: `$appointment->setDurationMinutes($pathologyType->getDefaultDuration())`.
+- If the user explicitly provides a duration, that value is used and the default is not applied.
 
 ---
 
@@ -1106,6 +1119,8 @@ This section defines the REST API endpoints required to support the functional s
 
 ### 7.3 Appointments
 
+Appointments are backed by the **Appointment** entity (see §6). To populate procedure type and treatment selectors, the API may expose **GET /api/pathology_types** (id, name, default_duration) and **GET /api/treatments** (id, treatmentName, etc.). The project uses a **Doctor** entity for the appointment’s doctor.
+
 | Method | Route | Description |
 |--------|--------|--------------|
 | GET | `/api/appointments` | List appointments (query: date, boxId, doctorId, patientId) |
@@ -1124,14 +1139,18 @@ This section defines the REST API endpoints required to support the functional s
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | patientId | integer | yes | Patient id. |
-| doctorId | integer | yes | User (doctor) id. |
+| doctorId | integer | yes | Doctor id. |
 | boxId | integer | yes | Box id. |
 | date | string | yes | ISO 8601 date (YYYY-MM-DD). |
 | startTime | string | yes | Time (HH:MM or ISO time). |
-| durationMinutes | integer | yes | 30, 60, 90, 120, etc. |
-| treatmentId or reason | integer/string | no | Treatment or pathology/reason. |
+| durationMinutes | integer | no* | Duration in minutes. If omitted and pathologyTypeId is set, the server sets it from PathologyType.default_duration (see §6.1). |
+| pathologyTypeId | integer | no | PathologyType id; used for default duration when durationMinutes is empty. |
+| treatmentId | integer | no | Treatment id; nullable on appointment. |
+| reason | string | no | Free-text pathology/reason (e.g. consultationReason). |
 | status | string | no | e.g. confirmed, in_progress, arrived, cancelled. |
-| clinicalNotes | string | no | Free text. |
+| clinicalNotes | string | no | Free text (maps to appointment observations). |
+
+*See §6.1 for default-duration behaviour.
 
 **Example request (POST)**
 
@@ -1142,8 +1161,8 @@ This section defines the REST API endpoints required to support the functional s
   "boxId": 1,
   "date": "2026-10-05",
   "startTime": "12:00",
-  "durationMinutes": 90,
-  "reason": "Root canal",
+  "pathologyTypeId": 1,
+  "treatmentId": 2,
   "clinicalNotes": "Severe sensitivity to cold/heat on tooth #14. Pulp evaluation required."
 }
 ```
