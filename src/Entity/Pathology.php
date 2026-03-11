@@ -24,8 +24,9 @@ class Pathology
     /**
      * @var Collection<int, Treatment>
      */
-    #[ORM\ManyToMany(targetEntity: Treatment::class, mappedBy: 'pathologies')]
-    private Collection $treatments;
+    #[ORM\ManyToOne(targetEntity: Treatment::class, inversedBy: 'pathologies')]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?Treatment $treatment = null;
 
     #[ORM\Column(length: 20, nullable: true)]
     private ?string $visualType = null;
@@ -36,9 +37,12 @@ class Pathology
     #[ORM\OneToMany(targetEntity: OdontogramaDetail::class, mappedBy: 'pathology')]
     private Collection $odontogramaDetails;
 
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?PathologyType $pathology_type = null;    
+
     public function __construct()
     {
-        $this->treatments = new ArrayCollection();
         $this->odontogramaDetails = new ArrayCollection();
     }
 
@@ -74,26 +78,14 @@ class Pathology
     /**
      * @return Collection<int, Treatment>
      */
-    public function getTreatments(): Collection
+    public function getTreatment(): Collection
     {
-        return $this->treatments;
+        return $this->treatment;
     }
 
-    public function addTreatment(Treatment $treatment): static
+    public function setTreatment(?Treatment $treatment): static
     {
-        if (!$this->treatments->contains($treatment)) {
-            $this->treatments->add($treatment);
-            $treatment->addPathology($this);
-        }
-
-        return $this;
-    }
-
-    public function removeTreatment(Treatment $treatment): static
-    {
-        if ($this->treatments->removeElement($treatment)) {
-            $treatment->removePathology($this);
-        }
+        $this->treatment = $treatment;
 
         return $this;
     }
@@ -139,4 +131,17 @@ class Pathology
 
         return $this;
     }
+
+    public function getPathologyType(): ?PathologyType
+    {
+        return $this->pathology_type;
+    }
+
+    public function setPathologyType(?PathologyType $pathology_type): static
+    {
+        $this->pathology_type = $pathology_type;
+
+        return $this;
+    }
+
 }

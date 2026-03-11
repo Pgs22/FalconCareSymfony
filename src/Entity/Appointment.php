@@ -53,6 +53,9 @@ class Appointment
     #[ORM\OneToMany(targetEntity: Odontogram::class, mappedBy: 'visit')]
     private Collection $odontograms;
 
+    #[ORM\Column]
+    private ?int $durationMinutes = null;
+
     public function __construct()
     {
         $this->odontograms = new ArrayCollection();
@@ -197,6 +200,18 @@ class Appointment
                 $odontogram->setVisit(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getDurationMinutes(): ?int
+    {
+        return $this->durationMinutes;
+    }
+
+    public function setDurationMinutes(int $durationMinutes): static
+    {
+        $this->durationMinutes = $durationMinutes;
 
         return $this;
     }
