@@ -22,7 +22,7 @@ class Treatment
     #[ORM\Column(type: Types::TEXT)]
     private ?string $description = null;
 
-    #[ORM\Column]
+    #[ORM\Column(nullable: true)]
     private ?int $estimatedDuration = null;
 
     /**
@@ -37,7 +37,7 @@ class Treatment
     /**
      * @var Collection<int, Pathology>
      */
-    #[ORM\ManyToMany(targetEntity: Pathology::class, inversedBy: 'treatments')]
+    #[ORM\OneToMany(targetEntity: Pathology::class, mappedBy: 'treatment')]
     private Collection $pathologies;
 
     #[ORM\Column(length: 20, nullable: true)]
@@ -48,6 +48,9 @@ class Treatment
      */
     #[ORM\OneToMany(targetEntity: Odontogram::class, mappedBy: 'treatment')]
     private Collection $odontograms;
+
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $schedulingNotes = null;
 
     public function __construct()
     {
@@ -201,6 +204,18 @@ class Treatment
                 $odontogram->setTreatment(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getSchedulingNotes(): ?string
+    {
+        return $this->schedulingNotes;
+    }
+
+    public function setSchedulingNotes(?string $schedulingNotes): static
+    {
+        $this->schedulingNotes = $schedulingNotes;
 
         return $this;
     }
