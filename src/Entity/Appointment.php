@@ -170,7 +170,10 @@ class Appointment
     public function setTreatment(?Treatment $treatment): static
     {
         $this->treatment = $treatment;
-
+        if ($treatment && $treatment->getPathologies()->first()) {
+            $pathology = $treatment->getPathologies()->first();
+            $this->durationMinutes = $pathology->getPathologyType()->getDefaultDuration();
+        }
         return $this;
     }
 

@@ -26,6 +26,9 @@ final class AppointmentController extends AbstractController
     public function new(Request $request, EntityManagerInterface $entityManager): Response
     {
         $appointment = new Appointment();
+
+        $appointment->setStatus('Scheduled');
+
         $form = $this->createForm(AppointmentType::class, $appointment);
         $form->handleRequest($request);
 
@@ -33,12 +36,32 @@ final class AppointmentController extends AbstractController
             $entityManager->persist($appointment);
             $entityManager->flush();
 
-            return $this->redirectToRoute('app_appointment_index', [], Response::HTTP_SEE_OTHER);
+            return $this->redirectToRoute('app_appointment_index');
         }
 
         return $this->render('appointment/new.html.twig', [
             'appointment' => $appointment,
             'form' => $form,
+        ]);
+    }
+
+    #[Route('/{id}/open', name: 'app_appointment_open', methods: ['GET'])]
+    public function open(Appointment $appointment, EntityManagerInterface $entityManager): Response
+    {
+        $patient = $appointment->getPatient();
+
+        $odontogramId = $this->PatientController->getLastIdOdontogram($patient);
+
+        if (!$odontogramId) {
+            $odontogramId = $this->OdontogramController->createNewVisitOdontogram($patient, $appointment);
+
+            $this->PatientController->saveLastIdOdontogram($patient, $odontogramId);
+            
+            $entityManager->flush();
+        }
+
+        return $this->redirectToRoute('app_odontogram_view', [
+            'id' => $odontogramId
         ]);
     }
 
