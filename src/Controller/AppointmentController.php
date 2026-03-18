@@ -80,10 +80,29 @@ final class AppointmentController extends AbstractController
     }
 
     #[Route('/{id}', name: 'app_appointment_show', methods: ['GET'])]
-    public function show(Appointment $appointment): Response
+    public function show(Appointment $appointment): JsonResponse
     {
-        return $this->render('appointment/show.html.twig', [
-            'appointment' => $appointment,
+
+        return $this->json([
+            'id' => $appointment->getId(),
+            'date' => $appointment->getVisitDate()->format('Y-m-d'),
+            'time' => $appointment->getVisitTime()->format('H:i'),
+            'reason' => $appointment->getConsultationReason(),
+            'observations' => $appointment->getObservations(),
+            'status' => $appointment->getStatus(),
+            'duration' => $appointment->getDurationMinutes(),
+            
+            
+            'patient' => [
+                'id' => $appointment->getPatient()->getId(),
+                'name' => $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName(),
+            ],
+            'doctor' => [
+                'id' => $appointment->getDoctor()->getId(),
+                'name' => $appointment->getDoctor()->getFirstName(),
+            ],
+            'box' => $appointment->getBox()->getBoxName(),
+            'treatmentId' => $appointment->getTreatment() ? $appointment->getTreatment()->getId() : null,
         ]);
     }
 
@@ -138,14 +157,12 @@ final class AppointmentController extends AbstractController
         ], Response::HTTP_BAD_REQUEST);
     }
 
-    #[Route('/{id}', name: 'app_appointment_delete', methods: ['POST'])]
-    public function delete(Request $request, Appointment $appointment, EntityManagerInterface $entityManager): Response
+    #[Route('/{id}', name: 'app_appointment_delete', methods: ['DELETE'])]
+    public function delete(Appointment $appointment, EntityManagerInterface $entityManager): JsonResponse
     {
-        if ($this->isCsrfTokenValid('delete'.$appointment->getId(), $request->getPayload()->getString('_token'))) {
-            $entityManager->remove($appointment);
-            $entityManager->flush();
-        }
+        $entityManager->remove($appointment);
+        $entityManager->flush();
 
-        return $this->redirectToRoute('app_appointment_index', [], Response::HTTP_SEE_OTHER);
+        return $this->json(['message' => 'Cita eliminada correctamente']);
     }
 }
