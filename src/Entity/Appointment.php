@@ -198,7 +198,6 @@ class Appointment
     public function removeOdontogram(Odontogram $odontogram): static
     {
         if ($this->odontograms->removeElement($odontogram)) {
-            // set the owning side to null (unless already changed)
             if ($odontogram->getVisit() === $this) {
                 $odontogram->setVisit(null);
             }
@@ -216,6 +215,14 @@ class Appointment
     {
         $this->durationMinutes = $durationMinutes;
 
+        return $this;
+    }
+
+    public function setFirstVisit(bool $isFirstVisit): self
+    {
+        if ($isFirstVisit) {
+            $this->durationMinutes = 30;
+        }
         return $this;
     }
 }

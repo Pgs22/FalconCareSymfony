@@ -10,6 +10,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\HttpFoundation\JsonResponse;
 
 #[Route('/appointment')]
 final class AppointmentController extends AbstractController
@@ -22,27 +23,40 @@ final class AppointmentController extends AbstractController
         ]);
     }
 
-    #[Route('/new', name: 'app_appointment_new', methods: ['GET', 'POST'])]
-    public function new(Request $request, EntityManagerInterface $entityManager): Response
+    #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
+    public function new(Request $request, EntityManagerInterface $entityManager, AppointmentRepository $repository): JsonResponse
     {
         $appointment = new Appointment();
-
         $appointment->setStatus('Scheduled');
 
+        $data = json_decode($request->getContent(), true);
+
         $form = $this->createForm(AppointmentType::class, $appointment);
-        $form->handleRequest($request);
+        $form->submit($data); 
 
         if ($form->isSubmitted() && $form->isValid()) {
+            
+            $busy = $repository->findOneBy([ 
+                'visitDate' => $appointment->getVisitDate(),
+                'visitTime' => $appointment->getVisitTime(),
+                'box' => $appointment->getBox()
+            ]);
+
+            if ($busy) {
+                return $this->json(['error' => 'El Box ya está ocupado en esa hora'], Response::HTTP_CONFLICT);
+            }
+
             $entityManager->persist($appointment);
             $entityManager->flush();
 
-            return $this->redirectToRoute('app_appointment_index');
+            return $this->json([
+                'id' => $appointment->getId(),
+                'duration' => $appointment->getDurationMinutes(),
+                'message' => 'Cita creada con éxito'
+            ], Response::HTTP_CREATED);
         }
 
-        return $this->render('appointment/new.html.twig', [
-            'appointment' => $appointment,
-            'form' => $form,
-        ]);
+        return $this->json(['errors' => 'Datos inválidos'], Response::HTTP_BAD_REQUEST);
     }
 
     #[Route('/{id}/open', name: 'app_appointment_open', methods: ['GET'])]
@@ -73,22 +87,55 @@ final class AppointmentController extends AbstractController
         ]);
     }
 
-    #[Route('/{id}/edit', name: 'app_appointment_edit', methods: ['GET', 'POST'])]
-    public function edit(Request $request, Appointment $appointment, EntityManagerInterface $entityManager): Response
-    {
-        $form = $this->createForm(AppointmentType::class, $appointment);
-        $form->handleRequest($request);
+    #[Route('/{id}/update', name: 'app_appointment_update', methods: ['POST', 'PUT'])]
+    public function update(
+        Request $request, 
+        Appointment $appointment, 
+        EntityManagerInterface $entityManager,
+        AppointmentRepository $repository
+    ): JsonResponse {
+        $data = json_decode($request->getContent(), true);
 
-        if ($form->isSubmitted() && $form->isValid()) {
-            $entityManager->flush();
-
-            return $this->redirectToRoute('app_appointment_index', [], Response::HTTP_SEE_OTHER);
+        if (!$data) {
+            return $this->json(['error' => 'JSON inválido'], Response::HTTP_BAD_REQUEST);
         }
 
-        return $this->render('appointment/edit.html.twig', [
-            'appointment' => $appointment,
-            'form' => $form,
-        ]);
+        $form = $this->createForm(AppointmentType::class, $appointment, ['csrf_protection' => false]);
+        
+        $form->submit($data, false);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            
+            $busy = $repository->createQueryBuilder('a')
+                ->where('a.visitDate = :date')
+                ->andWhere('a.visitTime = :time')
+                ->andWhere('a.box = :box')
+                ->andWhere('a.id != :currentId') // Que no sea la propia cita que editamos
+                ->setParameter('date', $appointment->getVisitDate())
+                ->setParameter('time', $appointment->getVisitTime())
+                ->setParameter('box', $appointment->getBox())
+                ->setParameter('currentId', $appointment->getId())
+                ->getQuery()
+                ->getOneOrNullResult();
+
+            if ($busy) {
+                return $this->json(['error' => 'No se puede mover la cita: el Box ya está ocupado'], Response::HTTP_CONFLICT);
+            }
+
+            $entityManager->flush();
+
+            return $this->json([
+                'status' => 'updated',
+                'id' => $appointment->getId(),
+                'duration' => $appointment->getDurationMinutes(),
+                'message' => 'Cita actualizada correctamente'
+            ]);
+        }
+
+        return $this->json([
+            'error' => 'Error de validación',
+            'details' => (string) $form->getErrors(true)
+        ], Response::HTTP_BAD_REQUEST);
     }
 
     #[Route('/{id}', name: 'app_appointment_delete', methods: ['POST'])]
