@@ -1,0 +1,21 @@
+nelmio_api_doc:
+  documentation:
+    info:
+      title: FalconCare API
+      description: REST JSON API contract for FalconCare (Symfony backend).
+      version: 1.0.0
+    servers:
+      - url: /api
+        description: API base path
+    components:
+      securitySchemes:
+        bearerAuth:
+          type: http
+          scheme: bearer
+          bearerFormat: JWT
+    security:
+      - bearerAuth: []
+  areas:
+    default:
+      path_patterns:
+        - ^/api(?!/docs)

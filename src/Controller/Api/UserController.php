@@ -6,6 +6,7 @@ use App\Entity\User;
 use App\Form\UserType;
 use App\Repository\UserRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use OpenApi\Attributes as OA;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -16,6 +17,7 @@ use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
 #[Route('/api/users')]
+#[OA\Tag(name: 'Users')]
 final class UserController extends AbstractController
 {
     public function __construct(
@@ -30,6 +32,30 @@ final class UserController extends AbstractController
      * List all users (doctors, admins, staff).
      */
     #[Route(name: 'api_user_list', methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/users',
+        summary: 'List users',
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'User list',
+                content: new OA\JsonContent(
+                    type: 'array',
+                    items: new OA\Items(
+                        type: 'object',
+                        properties: [
+                            new OA\Property(property: 'id', type: 'integer', example: 1),
+                            new OA\Property(property: 'email', type: 'string', example: 'doctor@example.com'),
+                            new OA\Property(property: 'roles', type: 'array', items: new OA\Items(type: 'string')),
+                        ]
+                    )
+                )
+            ),
+            new OA\Response(response: 401, description: 'Unauthorized'),
+            new OA\Response(response: 403, description: 'Forbidden'),
+        ]
+    )]
     public function index(): JsonResponse
     {
         $users = $this->userRepository->findBy([], ['id' => 'ASC']);
@@ -44,6 +70,18 @@ final class UserController extends AbstractController
      * Get one user by id.
      */
     #[Route('/{id}', name: 'api_user_show', requirements: ['id' => '\d+'], methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/users/{id}',
+        summary: 'Get user',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'User'),
+            new OA\Response(response: 401, description: 'Unauthorized'),
+            new OA\Response(response: 403, description: 'Forbidden'),
+            new OA\Response(response: 404, description: 'Not found'),
+        ]
+    )]
     public function show(User $user): JsonResponse
     {
         $data = $this->serializer->serialize($user, 'json', [
@@ -57,6 +95,28 @@ final class UserController extends AbstractController
      * Create a new user.
      */
     #[Route(name: 'api_user_create', methods: ['POST'])]
+    #[OA\Post(
+        path: '/api/users',
+        summary: 'Create user',
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['email', 'plainPassword'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email'),
+                    new OA\Property(property: 'plainPassword', type: 'string', format: 'password', minLength: 6),
+                    new OA\Property(property: 'roles', type: 'array', items: new OA\Items(type: 'string')),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: 'Created'),
+            new OA\Response(response: 401, description: 'Unauthorized'),
+            new OA\Response(response: 403, description: 'Forbidden'),
+            new OA\Response(response: 422, description: 'Validation failed'),
+        ]
+    )]
     public function create(Request $request): JsonResponse
     {
         $user = new User();
@@ -86,6 +146,29 @@ final class UserController extends AbstractController
      * Update an existing user.
      */
     #[Route('/{id}', name: 'api_user_update', requirements: ['id' => '\d+'], methods: ['PUT', 'PATCH'])]
+    #[OA\Put(
+        path: '/api/users/{id}',
+        summary: 'Update user',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email'),
+                    new OA\Property(property: 'plainPassword', type: 'string', format: 'password', minLength: 6),
+                    new OA\Property(property: 'roles', type: 'array', items: new OA\Items(type: 'string')),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Updated'),
+            new OA\Response(response: 401, description: 'Unauthorized'),
+            new OA\Response(response: 403, description: 'Forbidden'),
+            new OA\Response(response: 404, description: 'Not found'),
+            new OA\Response(response: 422, description: 'Validation failed'),
+        ]
+    )]
     public function update(Request $request, User $user): JsonResponse
     {
         $form = $this->createForm(UserType::class, $user, ['require_password' => false, 'csrf_protection' => false]);
@@ -113,6 +196,18 @@ final class UserController extends AbstractController
      * Delete a user.
      */
     #[Route('/{id}', name: 'api_user_delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
+    #[OA\Delete(
+        path: '/api/users/{id}',
+        summary: 'Delete user',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 204, description: 'Deleted'),
+            new OA\Response(response: 401, description: 'Unauthorized'),
+            new OA\Response(response: 403, description: 'Forbidden'),
+            new OA\Response(response: 404, description: 'Not found'),
+        ]
+    )]
     public function delete(User $user): JsonResponse
     {
         $this->entityManager->remove($user);

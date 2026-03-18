@@ -1,6 +1,6 @@
 <?php
 
-namespace App\DataFixtures;
+namespace App\DataFixtures\old;
 
 use App\Entity\Pathology;
 use Doctrine\Bundle\FixturesBundle\Fixture;

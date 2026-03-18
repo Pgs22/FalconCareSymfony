@@ -6,6 +6,7 @@ use App\Entity\Document;
 use App\Entity\Patient;
 use App\Repository\DocumentRepository;
 use App\Repository\PatientRepository;
+use OpenApi\Attributes as OA;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -17,6 +18,7 @@ use Symfony\Component\Serializer\SerializerInterface;
 use Doctrine\ORM\Tools\Pagination\Paginator;
 
 #[Route('/api/documents')]
+#[OA\Tag(name: 'Documents')]
 final class DocumentApiController extends AbstractController
 {
     public function __construct(
@@ -28,7 +30,13 @@ final class DocumentApiController extends AbstractController
     /**
      * To search all documents
      */
-    #[Route('/index', name: 'api_document_list', methods: ['GET'])]
+    #[Route('', name: 'api_document_list', methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/documents',
+        summary: 'List documents',
+        security: [['bearerAuth' => []]],
+        responses: [new OA\Response(response: 200, description: 'Document list')]
+    )]
     public function getAll(): JsonResponse
     {
         $documents = $this->documentRepository->getAll();
@@ -42,6 +50,16 @@ final class DocumentApiController extends AbstractController
      * To search for documents by date YYYY-MM-DD
      */
     #[Route('/captureDate', name: 'api_document_search', methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/documents/captureDate',
+        summary: 'Search documents by capture date',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'date', in: 'query', required: true, schema: new OA\Schema(type: 'string', format: 'date'))],
+        responses: [
+            new OA\Response(response: 200, description: 'Paginator/collection'),
+            new OA\Response(response: 400, description: 'Bad request'),
+        ]
+    )]
     public function findByCaptureDate(Request $request): JsonResponse
     {
         $dateString = $request->query->get('date');
@@ -67,6 +85,16 @@ final class DocumentApiController extends AbstractController
      * To search for documents by ID
      */
     #[Route('/{id}', name: 'api_document_show', requirements: ['id' => '\\d+'], methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/documents/{id}',
+        summary: 'Get document metadata',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'Document'),
+            new OA\Response(response: 404, description: 'Not found'),
+        ]
+    )]
     public function findById(int $id): JsonResponse
     {
         $document = $this->documentRepository->findById($id);
@@ -87,6 +115,31 @@ final class DocumentApiController extends AbstractController
      * store the file in the server. The route path to save on database.
      */
     #[Route('', name: 'api_document_create', methods: ['POST'])]
+    #[OA\Post(
+        path: '/api/documents',
+        summary: 'Upload document',
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    required: ['file', 'patient', 'type'],
+                    properties: [
+                        new OA\Property(property: 'file', type: 'string', format: 'binary'),
+                        new OA\Property(property: 'patient', type: 'integer', example: 1),
+                        new OA\Property(property: 'type', type: 'string', example: 'xray'),
+                        new OA\Property(property: 'description', type: 'string', nullable: true),
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: 'Created'),
+            new OA\Response(response: 400, description: 'Bad request'),
+            new OA\Response(response: 404, description: 'Patient not found'),
+        ]
+    )]
     public function create(Request $request, PatientRepository $patientRepo): JsonResponse
     {
         $uploadedFile = $request->files->get('file');
@@ -119,6 +172,17 @@ final class DocumentApiController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_document_update', methods: ['PUT'])]
+    #[OA\Put(
+        path: '/api/documents/{id}',
+        summary: 'Update document metadata',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(type: 'object')),
+        responses: [
+            new OA\Response(response: 200, description: 'Updated'),
+            new OA\Response(response: 404, description: 'Not found'),
+        ]
+    )]
     public function update(Request $request, int $id): JsonResponse
     {
         $document = $this->documentRepository->findById($id);
@@ -137,6 +201,20 @@ final class DocumentApiController extends AbstractController
     }
 
     #[Route('/{patientId}/{documentId}', name: 'api_document_delete', methods: ['DELETE'])]
+    #[OA\Delete(
+        path: '/api/documents/{patientId}/{documentId}',
+        summary: 'Delete document (patient scoped)',
+        security: [['bearerAuth' => []]],
+        parameters: [
+            new OA\Parameter(name: 'patientId', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'documentId', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Deleted'),
+            new OA\Response(response: 403, description: 'Forbidden'),
+            new OA\Response(response: 404, description: 'Not found'),
+        ]
+    )]
     public function delete(int $patientId, int $documentId): JsonResponse
     {
         $document = $this->documentRepository->findById($documentId);
@@ -172,6 +250,16 @@ final class DocumentApiController extends AbstractController
     }
 
     #[Route('/{id}/download', name: 'api_document_download', requirements: ['id' => '\\d+'], methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/documents/{id}/download',
+        summary: 'Download document file',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'Binary file'),
+            new OA\Response(response: 404, description: 'Not found'),
+        ]
+    )]
     public function download(Document $document): Response
     {
         $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
@@ -187,6 +275,16 @@ final class DocumentApiController extends AbstractController
      * We search for patient documents by their NIF field
      */
     #[Route('/patient-docs/{identityDocument}', name: 'api_documents_by_nif', methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/documents/patient-docs/{identityDocument}',
+        summary: 'List documents by patient identity document',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'identityDocument', in: 'path', required: true, schema: new OA\Schema(type: 'string'))],
+        responses: [
+            new OA\Response(response: 200, description: 'Document list'),
+            new OA\Response(response: 404, description: 'Patient not found'),
+        ]
+    )]
     public function findByIdentityDocumentPatient(
         string $identityDocument, 
         PatientRepository $patientRepo,

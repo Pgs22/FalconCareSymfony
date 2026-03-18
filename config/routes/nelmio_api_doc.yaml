@@ -1,0 +1,17 @@
+nelmio_api_doc:
+  resource: "@NelmioApiDocBundle/config/routing/swaggerui.php"
+  type: php
+  prefix: /api/docs
+
+# Nelmio 5.9 no incluye el antiguo openapi.xml. Definimos explícitamente
+# los endpoints de especificación para Swagger UI.
+nelmio_api_doc_json:
+  path: /api/docs.json
+  methods: [GET]
+  defaults: { _controller: nelmio_api_doc.controller.swagger_json }
+
+nelmio_api_doc_yaml:
+  path: /api/docs.yaml
+  methods: [GET]
+  defaults: { _controller: nelmio_api_doc.controller.swagger_yaml }
+
