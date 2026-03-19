@@ -15,12 +15,49 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 #[Route('/appointment')]
 final class AppointmentController extends AbstractController
 {
-    #[Route(name: 'app_appointment_index', methods: ['GET'])]
-    public function index(AppointmentRepository $appointmentRepository): Response
+    #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
+    public function index(Request $request, AppointmentRepository $repo): JsonResponse 
     {
-        return $this->render('appointment/index.html.twig', [
-            'appointments' => $appointmentRepository->findAll(),
-        ]);
+        $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
+        $fecha = new \DateTime($fechaStr);
+
+        // El controlador NO sabe cómo buscar, solo le pide al Repo que lo haga
+        $appointments = $repo->findByDate($fecha);
+
+        return $this->json($this->serializeAppointments($appointments));
+    }
+
+    private function serializeAppointments(array $appointments): array
+    {
+        $result = [];
+        foreach ($appointments as $appointment) {
+            $result[] = [
+                'id' => $appointment->getId(),
+                'time' => $appointment->getVisitTime()->format('H:i'),
+                'duration' => $appointment->getDurationMinutes(),
+                'status' => $appointment->getStatus(),
+                'patientName' => $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName(),
+                'doctorName' => $appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames(),
+                'box' => $appointment->getBox()->getBoxName(),
+                'reason' => $appointment->getConsultationReason()
+            ];
+        }
+        return $result;
+    }
+
+    #[Route('/weekly', name: 'app_appointment_weekly', methods: ['GET'])]
+    public function weekly(Request $request, AppointmentRepository $repo): JsonResponse 
+    {
+        $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
+        
+        try {
+            $fecha = new \DateTime($fechaStr);
+            $appointments = $repo->findByWeek($fecha);
+        } catch (\Exception $e) {
+            return $this->json(['error' => 'Fecha no válida'], 400);
+        }
+
+        return $this->json($this->serializeAppointments($appointments));
     }
 
     #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
@@ -99,7 +136,7 @@ final class AppointmentController extends AbstractController
             ],
             'doctor' => [
                 'id' => $appointment->getDoctor()->getId(),
-                'name' => $appointment->getDoctor()->getFirstName(),
+                'name' => $appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames(),
             ],
             'box' => $appointment->getBox()->getBoxName(),
             'treatmentId' => $appointment->getTreatment() ? $appointment->getTreatment()->getId() : null,

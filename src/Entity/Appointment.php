@@ -225,4 +225,5 @@ class Appointment
         }
         return $this;
     }
+    
 }
