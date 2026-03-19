@@ -170,7 +170,10 @@ class Appointment
     public function setTreatment(?Treatment $treatment): static
     {
         $this->treatment = $treatment;
-
+        if ($treatment && $treatment->getPathologies()->first()) {
+            $pathology = $treatment->getPathologies()->first();
+            $this->durationMinutes = $pathology->getPathologyType()->getDefaultDuration();
+        }
         return $this;
     }
 
@@ -195,7 +198,6 @@ class Appointment
     public function removeOdontogram(Odontogram $odontogram): static
     {
         if ($this->odontograms->removeElement($odontogram)) {
-            // set the owning side to null (unless already changed)
             if ($odontogram->getVisit() === $this) {
                 $odontogram->setVisit(null);
             }
@@ -215,4 +217,13 @@ class Appointment
 
         return $this;
     }
+
+    public function setFirstVisit(bool $isFirstVisit): self
+    {
+        if ($isFirstVisit) {
+            $this->durationMinutes = 30;
+        }
+        return $this;
+    }
+    
 }

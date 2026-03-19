@@ -1,0 +1,204 @@
+<?php
+
+namespace App\Controller\Api;
+
+use App\Entity\Appointment;
+use App\Form\AppointmentType;
+use App\Repository\AppointmentRepository;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\HttpFoundation\JsonResponse;
+
+#[Route('/api/appointment')]
+final class AppointmentController extends AbstractController
+{
+    #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
+    public function index(Request $request, AppointmentRepository $repo): JsonResponse 
+    {
+        $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
+        $fecha = new \DateTime($fechaStr);
+
+        $appointments = $repo->findByDate($fecha);
+
+        return $this->json($this->serializeAppointments($appointments));
+    }
+
+    private function serializeAppointments(array $appointments): array
+    {
+        $result = [];
+        foreach ($appointments as $appointment) {
+            $result[] = [
+                'id' => $appointment->getId(),
+                'time' => $appointment->getVisitTime()->format('H:i'),
+                'duration' => $appointment->getDurationMinutes(),
+                'status' => $appointment->getStatus(),
+                'patientName' => $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName(),
+                'doctorName' => $appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames(),
+                'box' => $appointment->getBox()->getBoxName(),
+                'reason' => $appointment->getConsultationReason()
+            ];
+        }
+        return $result;
+    }
+
+    #[Route('/weekly', name: 'app_appointment_weekly', methods: ['GET'])]
+    public function weekly(Request $request, AppointmentRepository $repo): JsonResponse 
+    {
+        $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
+        
+        try {
+            $fecha = new \DateTime($fechaStr);
+            $appointments = $repo->findByWeek($fecha);
+        } catch (\Exception $e) {
+            return $this->json(['error' => 'Fecha no válida'], 400);
+        }
+
+        return $this->json($this->serializeAppointments($appointments));
+    }
+
+    #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
+    public function new(Request $request, EntityManagerInterface $entityManager, AppointmentRepository $repository): JsonResponse
+    {
+        $appointment = new Appointment();
+        $appointment->setStatus('Scheduled');
+
+        $data = json_decode($request->getContent(), true);
+
+        $form = $this->createForm(AppointmentType::class, $appointment);
+        $form->submit($data); 
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            
+            $busy = $repository->findOneBy([ 
+                'visitDate' => $appointment->getVisitDate(),
+                'visitTime' => $appointment->getVisitTime(),
+                'box' => $appointment->getBox()
+            ]);
+
+            if ($busy) {
+                return $this->json(['error' => 'El Box ya está ocupado en esa hora'], Response::HTTP_CONFLICT);
+            }
+
+            $entityManager->persist($appointment);
+            $entityManager->flush();
+
+            return $this->json([
+                'id' => $appointment->getId(),
+                'duration' => $appointment->getDurationMinutes(),
+                'message' => 'Cita creada con éxito'
+            ], Response::HTTP_CREATED);
+        }
+
+        return $this->json(['errors' => 'Datos inválidos'], Response::HTTP_BAD_REQUEST);
+    }
+
+    #[Route('/{id}/open', name: 'app_appointment_open', methods: ['GET'])]
+    public function open(Appointment $appointment, EntityManagerInterface $entityManager): Response
+    {
+        $patient = $appointment->getPatient();
+
+        $odontogramId = $this->PatientController->getLastIdOdontogram($patient);
+
+        if (!$odontogramId) {
+            $odontogramId = $this->OdontogramController->createNewVisitOdontogram($patient, $appointment);
+
+            $this->PatientController->saveLastIdOdontogram($patient, $odontogramId);
+            
+            $entityManager->flush();
+        }
+
+        return $this->redirectToRoute('app_odontogram_view', [
+            'id' => $odontogramId
+        ]);
+    }
+
+    #[Route('/{id}', name: 'app_appointment_show', methods: ['GET'])]
+    public function show(Appointment $appointment): JsonResponse
+    {
+
+        return $this->json([
+            'id' => $appointment->getId(),
+            'date' => $appointment->getVisitDate()->format('Y-m-d'),
+            'time' => $appointment->getVisitTime()->format('H:i'),
+            'reason' => $appointment->getConsultationReason(),
+            'observations' => $appointment->getObservations(),
+            'status' => $appointment->getStatus(),
+            'duration' => $appointment->getDurationMinutes(),
+            
+            
+            'patient' => [
+                'id' => $appointment->getPatient()->getId(),
+                'name' => $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName(),
+            ],
+            'doctor' => [
+                'id' => $appointment->getDoctor()->getId(),
+                'name' => $appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames(),
+            ],
+            'box' => $appointment->getBox()->getBoxName(),
+            'treatmentId' => $appointment->getTreatment() ? $appointment->getTreatment()->getId() : null,
+        ]);
+    }
+
+    #[Route('/{id}/update', name: 'app_appointment_update', methods: ['POST', 'PUT'])]
+    public function update(
+        Request $request, 
+        Appointment $appointment, 
+        EntityManagerInterface $entityManager,
+        AppointmentRepository $repository
+    ): JsonResponse {
+        $data = json_decode($request->getContent(), true);
+
+        if (!$data) {
+            return $this->json(['error' => 'JSON inválido'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $form = $this->createForm(AppointmentType::class, $appointment, ['csrf_protection' => false]);
+        
+        $form->submit($data, false);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            
+            $busy = $repository->createQueryBuilder('a')
+                ->where('a.visitDate = :date')
+                ->andWhere('a.visitTime = :time')
+                ->andWhere('a.box = :box')
+                ->andWhere('a.id != :currentId') // Que no sea la propia cita que editamos
+                ->setParameter('date', $appointment->getVisitDate())
+                ->setParameter('time', $appointment->getVisitTime())
+                ->setParameter('box', $appointment->getBox())
+                ->setParameter('currentId', $appointment->getId())
+                ->getQuery()
+                ->getOneOrNullResult();
+
+            if ($busy) {
+                return $this->json(['error' => 'No se puede mover la cita: el Box ya está ocupado'], Response::HTTP_CONFLICT);
+            }
+
+            $entityManager->flush();
+
+            return $this->json([
+                'status' => 'updated',
+                'id' => $appointment->getId(),
+                'duration' => $appointment->getDurationMinutes(),
+                'message' => 'Cita actualizada correctamente'
+            ]);
+        }
+
+        return $this->json([
+            'error' => 'Error de validación',
+            'details' => (string) $form->getErrors(true)
+        ], Response::HTTP_BAD_REQUEST);
+    }
+
+    #[Route('/{id}', name: 'app_appointment_delete', methods: ['DELETE'])]
+    public function delete(Appointment $appointment, EntityManagerInterface $entityManager): JsonResponse
+    {
+        $entityManager->remove($appointment);
+        $entityManager->flush();
+
+        return $this->json(['message' => 'Cita eliminada correctamente']);
+    }
+}

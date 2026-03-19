@@ -16,28 +16,30 @@ class AppointmentRepository extends ServiceEntityRepository
         parent::__construct($registry, Appointment::class);
     }
 
-    //    /**
-    //     * @return Appointment[] Returns an array of Appointment objects
-    //     */
-    //    public function findByExampleField($value): array
-    //    {
-    //        return $this->createQueryBuilder('a')
-    //            ->andWhere('a.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->orderBy('a.id', 'ASC')
-    //            ->setMaxResults(10)
-    //            ->getQuery()
-    //            ->getResult()
-    //        ;
-    //    }
+    public function findByDate(\DateTimeInterface $date): array
+    {
+        return $this->createQueryBuilder('a')
+            ->andWhere('a.visit_date = :date')
+            ->setParameter('date', $date->format('Y-m-d'))
+            ->orderBy('a.visit_time', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }    
+    
+    public function findByWeek(\DateTime $date): array
+    {
+        // Calculamos el inicio (Lunes) y fin (Domingo) de esa semana
+        $startOfWeek = (clone $date)->modify('monday this week')->setTime(0, 0);
+        $endOfWeek = (clone $date)->modify('sunday this week')->setTime(23, 59, 59);
 
-    //    public function findOneBySomeField($value): ?Appointment
-    //    {
-    //        return $this->createQueryBuilder('a')
-    //            ->andWhere('a.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->getQuery()
-    //            ->getOneOrNullResult()
-    //        ;
-    //    }
+        return $this->createQueryBuilder('a')
+            ->andWhere('a.visitDate >= :start')
+            ->andWhere('a.visitDate <= :end')
+            ->setParameter('start', $startOfWeek)
+            ->setParameter('end', $endOfWeek)
+            ->orderBy('a.visitDate', 'ASC')
+            ->addOrderBy('a.visitTime', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
 }
