@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Controller;
+namespace App\Controller\Api;
 
 use App\Entity\Appointment;
 use App\Form\AppointmentType;
@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
-#[Route('/appointment')]
+#[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
@@ -21,7 +21,6 @@ final class AppointmentController extends AbstractController
         $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
         $fecha = new \DateTime($fechaStr);
 
-        // El controlador NO sabe cómo buscar, solo le pide al Repo que lo haga
         $appointments = $repo->findByDate($fecha);
 
         return $this->json($this->serializeAppointments($appointments));
