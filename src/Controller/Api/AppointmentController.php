@@ -60,18 +60,41 @@ final class AppointmentController extends AbstractController
     }
 
     #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
-    public function new(Request $request, EntityManagerInterface $entityManager, AppointmentRepository $repository): JsonResponse
-    {
+    public function new(
+        Request $request, 
+        EntityManagerInterface $entityManager, 
+        AppointmentRepository $repository
+    ): JsonResponse {
         $appointment = new Appointment();
-        $appointment->setStatus('Scheduled');
-
+        
+        // Recibimos el JSON de Angular
         $data = json_decode($request->getContent(), true);
 
+        // 1. Usamos el Formulario para mapear los datos básicos 
+        // (Paciente, Doctor, Box, Fecha, Hora)
         $form = $this->createForm(AppointmentType::class, $appointment);
         $form->submit($data); 
 
         if ($form->isSubmitted() && $form->isValid()) {
-            
+
+            // 2. LLAMADA EXPLÍCITA A TUS MÉTODOS DE ENTIDAD
+            // Si Angular envía "isFirstVisit": true, llamamos al set de la agenda
+            if (!empty($data['isFirstVisit'])) {
+                $appointment->setFirstVisit(true);
+            }
+
+            // Si Angular envía "isUrgency": true, llamamos al set de urgencia
+            if (!empty($data['isUrgency'])) {
+                $appointment->setUrgency(true);
+            }
+
+            // 3. Si el administrativo editó el tiempo a mano en Angular, 
+            // este valor tiene la última palabra y sobrescribe los 30 min.
+            if (isset($data['durationMinutes'])) {
+                $appointment->setDurationMinutes((int)$data['durationMinutes']);
+            }
+
+            // 4. Validación de disponibilidad del Box
             $busy = $repository->findOneBy([ 
                 'visitDate' => $appointment->getVisitDate(),
                 'visitTime' => $appointment->getVisitTime(),
@@ -79,9 +102,10 @@ final class AppointmentController extends AbstractController
             ]);
 
             if ($busy) {
-                return $this->json(['error' => 'El Box ya está ocupado en esa hora'], Response::HTTP_CONFLICT);
+                return $this->json(['error' => 'El Box ya está ocupado'], Response::HTTP_CONFLICT);
             }
 
+            // 5. Guardar en Base de Datos
             $entityManager->persist($appointment);
             $entityManager->flush();
 
