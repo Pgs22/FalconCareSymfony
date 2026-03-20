@@ -170,10 +170,14 @@ class Appointment
     public function setTreatment(?Treatment $treatment): static
     {
         $this->treatment = $treatment;
-        if ($treatment && $treatment->getPathologies()->first()) {
+        
+        // Solo si hay tratamiento y tiene al menos una patología
+        if ($treatment && $treatment->getPathologies()->count() > 0) {
             $pathology = $treatment->getPathologies()->first();
+            // Accedemos con seguridad a la duración por defecto
             $this->durationMinutes = $pathology->getPathologyType()->getDefaultDuration();
         }
+        
         return $this;
     }
 
@@ -222,6 +226,15 @@ class Appointment
     {
         if ($isFirstVisit) {
             $this->durationMinutes = 30;
+            $this->consultationReason = 'Primera Visita';
+        }
+        return $this;
+    }
+    public function setUrgency(bool $isUrgency): self
+    {
+        if ($isUrgency) {
+            $this->durationMinutes = 30;
+            $this->consultationReason = 'Urgencia Médica';
         }
         return $this;
     }
