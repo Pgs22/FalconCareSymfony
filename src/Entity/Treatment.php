@@ -150,19 +150,22 @@ class Treatment
         return $this->pathologies;
     }
 
-    public function addPathology(Pathology $pathology): static
+    public function addPathology(Pathology $pathology): self
     {
         if (!$this->pathologies->contains($pathology)) {
-            $this->pathologies->add($pathology);
+                $this->pathologies->add($pathology);
+                $pathology->setTreatment($this); 
         }
-
         return $this;
     }
 
-    public function removePathology(Pathology $pathology): static
+    public function removePathology(Pathology $pathology): self
     {
-        $this->pathologies->removeElement($pathology);
-
+        if ($this->pathologies->removeElement($pathology)) {
+            if ($pathology->getTreatment() === $this) {
+                $pathology->setTreatment(null);
+            }
+        }
         return $this;
     }
 
@@ -219,4 +222,6 @@ class Treatment
 
         return $this;
     }
+
+    
 }
