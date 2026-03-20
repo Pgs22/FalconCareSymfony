@@ -10,7 +10,6 @@ use App\Repository\OdontogramRepository;
 use App\Repository\OdontogramaDetailRepository;
 use App\Repository\PathologyRepository;
 use App\Repository\TreatmentRepository;
-use App\Repository\ToothFaceRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -27,7 +26,6 @@ final class OdontogramApiController extends AbstractController
         private readonly OdontogramaDetailRepository $odontogramaDetailRepository,
         private readonly TreatmentRepository $treatmentRepository,
         private readonly PathologyRepository $pathologyRepository,
-        private readonly ToothFaceRepository $toothFaceRepository,
         private readonly EntityManagerInterface $entityManager,
     ) {
     }
@@ -37,8 +35,10 @@ final class OdontogramApiController extends AbstractController
     {
         $data = json_decode($request->getContent(), true);
 
-        if (!$data) {
-            return $this->json(['error' => 'Invalid JSON body'], Response::HTTP_BAD_REQUEST);
+        if (!is_array($data)) {
+            return $this->json([
+                'error' => 'Invalid JSON body'
+            ], Response::HTTP_BAD_REQUEST);
         }
 
         $visitId = $data['visit_id'] ?? null;
@@ -52,12 +52,16 @@ final class OdontogramApiController extends AbstractController
 
         $appointment = $this->appointmentRepository->find($visitId);
         if (!$appointment) {
-            return $this->json(['error' => 'Appointment not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'error' => 'Appointment not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $treatment = $this->treatmentRepository->find($treatmentId);
         if (!$treatment) {
-            return $this->json(['error' => 'Treatment not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'error' => 'Treatment not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $existingOdontogram = $this->odontogramRepository->findOneBy([
@@ -70,6 +74,8 @@ final class OdontogramApiController extends AbstractController
                 'message' => 'Odontogram already exists for this visit and treatment',
                 'id' => $existingOdontogram->getId(),
                 'status' => $existingOdontogram->getStatus(),
+                'visit_id' => $appointment->getId(),
+                'treatment_id' => $treatment->getId(),
             ], Response::HTTP_OK);
         }
 
@@ -81,8 +87,10 @@ final class OdontogramApiController extends AbstractController
         $this->entityManager->persist($odontogram);
         $this->entityManager->flush();
 
-        $treatment->setLastOdontogramId($odontogram->getId());
-        $this->entityManager->flush();
+        if (method_exists($treatment, 'setLastOdontogramId')) {
+            $treatment->setLastOdontogramId($odontogram->getId());
+            $this->entityManager->flush();
+        }
 
         return $this->json([
             'message' => 'Odontogram created successfully',
@@ -99,39 +107,12 @@ final class OdontogramApiController extends AbstractController
         $odontogram = $this->odontogramRepository->find($id);
 
         if (!$odontogram) {
-            return $this->json(['message' => 'Odontogram not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'message' => 'Odontogram not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
-        $details = [];
-        foreach ($odontogram->getOdontogramaDetails() as $detail) {
-            $faces = [];
-            foreach ($detail->getToothFaces() as $face) {
-                $faces[] = [
-                    'id' => $face->getId(),
-                    'face_name' => $face->getFaceName(),
-                ];
-            }
-
-            $details[] = [
-                'id' => $detail->getId(),
-                'tooth_number' => $detail->getToothNumber(),
-                'pathology' => [
-                    'id' => $detail->getPathology()?->getId(),
-                    'description' => $detail->getPathology()?->getDescription(),
-                    'protocol_color' => $detail->getPathology()?->getProtocolColor(),
-                    'visual_type' => $detail->getPathology()?->getVisualType(),
-                ],
-                'faces' => $faces,
-            ];
-        }
-
-        return $this->json([
-            'id' => $odontogram->getId(),
-            'status' => $odontogram->getStatus(),
-            'visit_id' => $odontogram->getVisit()?->getId(),
-            'treatment_id' => $odontogram->getTreatment()?->getId(),
-            'details' => $details,
-        ], Response::HTTP_OK);
+        return $this->json($this->serializeOdontogram($odontogram), Response::HTTP_OK);
     }
 
     #[Route('/by-visit/{visitId}/treatment/{treatmentId}', name: 'api_odontogram_by_visit_and_treatment', requirements: ['visitId' => '\d+', 'treatmentId' => '\d+'], methods: ['GET'])]
@@ -139,12 +120,16 @@ final class OdontogramApiController extends AbstractController
     {
         $appointment = $this->appointmentRepository->find($visitId);
         if (!$appointment) {
-            return $this->json(['message' => 'Appointment not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'message' => 'Appointment not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $treatment = $this->treatmentRepository->find($treatmentId);
         if (!$treatment) {
-            return $this->json(['message' => 'Treatment not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'message' => 'Treatment not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $odontogram = $this->odontogramRepository->findOneBy([
@@ -153,7 +138,9 @@ final class OdontogramApiController extends AbstractController
         ]);
 
         if (!$odontogram) {
-            return $this->json(['message' => 'Odontogram not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'message' => 'Odontogram not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         return $this->json([
@@ -169,28 +156,40 @@ final class OdontogramApiController extends AbstractController
     {
         $odontogram = $this->odontogramRepository->find($odontogramId);
         if (!$odontogram) {
-            return $this->json(['error' => 'Odontogram not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'error' => 'Odontogram not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $data = json_decode($request->getContent(), true);
 
-        if (!$data) {
-            return $this->json(['error' => 'Invalid JSON body'], Response::HTTP_BAD_REQUEST);
+        if (!is_array($data)) {
+            return $this->json([
+                'error' => 'Invalid JSON body'
+            ], Response::HTTP_BAD_REQUEST);
         }
 
         $toothNumber = $data['tooth_number'] ?? null;
         $pathologyId = $data['pathology_id'] ?? null;
         $faces = $data['faces'] ?? [];
 
-        if (!$toothNumber || !$pathologyId) {
+        if ($toothNumber === null || $pathologyId === null) {
             return $this->json([
                 'error' => 'tooth_number and pathology_id are required'
             ], Response::HTTP_BAD_REQUEST);
         }
 
+        if (!is_array($faces)) {
+            return $this->json([
+                'error' => 'faces must be an array'
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
         $pathology = $this->pathologyRepository->find($pathologyId);
         if (!$pathology) {
-            return $this->json(['error' => 'Pathology not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'error' => 'Pathology not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $detail = new OdontogramaDetail();
@@ -200,7 +199,24 @@ final class OdontogramApiController extends AbstractController
 
         $this->entityManager->persist($detail);
 
+        $cleanFaces = [];
         foreach ($faces as $faceName) {
+            if (!is_string($faceName)) {
+                continue;
+            }
+
+            $faceName = trim($faceName);
+
+            if ($faceName === '') {
+                continue;
+            }
+
+            if (in_array($faceName, $cleanFaces, true)) {
+                continue;
+            }
+
+            $cleanFaces[] = $faceName;
+
             $face = new ToothFace();
             $face->setFaceName($faceName);
             $face->setOdontogramaDetail($detail);
@@ -215,7 +231,7 @@ final class OdontogramApiController extends AbstractController
             'odontogram_id' => $odontogram->getId(),
             'tooth_number' => $detail->getToothNumber(),
             'pathology_id' => $pathology->getId(),
-            'faces' => $faces,
+            'faces' => $cleanFaces,
         ], Response::HTTP_CREATED);
     }
 
@@ -224,30 +240,14 @@ final class OdontogramApiController extends AbstractController
     {
         $odontogram = $this->odontogramRepository->find($odontogramId);
         if (!$odontogram) {
-            return $this->json(['message' => 'Odontogram not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'message' => 'Odontogram not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $items = [];
         foreach ($odontogram->getOdontogramaDetails() as $detail) {
-            $faces = [];
-            foreach ($detail->getToothFaces() as $face) {
-                $faces[] = [
-                    'id' => $face->getId(),
-                    'face_name' => $face->getFaceName(),
-                ];
-            }
-
-            $items[] = [
-                'id' => $detail->getId(),
-                'tooth_number' => $detail->getToothNumber(),
-                'pathology' => [
-                    'id' => $detail->getPathology()?->getId(),
-                    'description' => $detail->getPathology()?->getDescription(),
-                    'protocol_color' => $detail->getPathology()?->getProtocolColor(),
-                    'visual_type' => $detail->getPathology()?->getVisualType(),
-                ],
-                'faces' => $faces,
-            ];
+            $items[] = $this->serializeDetail($detail);
         }
 
         return $this->json($items, Response::HTTP_OK);
@@ -259,7 +259,9 @@ final class OdontogramApiController extends AbstractController
         $detail = $this->odontogramaDetailRepository->find($detailId);
 
         if (!$detail) {
-            return $this->json(['error' => 'Odontogram detail not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'error' => 'Odontogram detail not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         foreach ($detail->getToothFaces() as $face) {
@@ -281,19 +283,35 @@ final class OdontogramApiController extends AbstractController
         $detail = $this->odontogramaDetailRepository->find($detailId);
 
         if (!$detail) {
-            return $this->json(['error' => 'Odontogram detail not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'error' => 'Odontogram detail not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $data = json_decode($request->getContent(), true);
 
-        if (!$data) {
-            return $this->json(['error' => 'Invalid JSON body'], Response::HTTP_BAD_REQUEST);
+        if (!is_array($data)) {
+            return $this->json([
+                'error' => 'Invalid JSON body'
+            ], Response::HTTP_BAD_REQUEST);
         }
 
         $faceName = $data['face_name'] ?? null;
 
-        if (!$faceName) {
-            return $this->json(['error' => 'face_name is required'], Response::HTTP_BAD_REQUEST);
+        if (!is_string($faceName) || trim($faceName) === '') {
+            return $this->json([
+                'error' => 'face_name is required'
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        $faceName = trim($faceName);
+
+        foreach ($detail->getToothFaces() as $existingFace) {
+            if ($existingFace->getFaceName() === $faceName) {
+                return $this->json([
+                    'error' => 'This face already exists for the detail'
+                ], Response::HTTP_CONFLICT);
+            }
         }
 
         $face = new ToothFace();
@@ -317,7 +335,9 @@ final class OdontogramApiController extends AbstractController
         $detail = $this->odontogramaDetailRepository->find($detailId);
 
         if (!$detail) {
-            return $this->json(['error' => 'Odontogram detail not found'], Response::HTTP_NOT_FOUND);
+            return $this->json([
+                'error' => 'Odontogram detail not found'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         $items = [];
@@ -329,5 +349,44 @@ final class OdontogramApiController extends AbstractController
         }
 
         return $this->json($items, Response::HTTP_OK);
+    }
+
+    private function serializeOdontogram(Odontogram $odontogram): array
+    {
+        $details = [];
+        foreach ($odontogram->getOdontogramaDetails() as $detail) {
+            $details[] = $this->serializeDetail($detail);
+        }
+
+        return [
+            'id' => $odontogram->getId(),
+            'status' => $odontogram->getStatus(),
+            'visit_id' => $odontogram->getVisit()?->getId(),
+            'treatment_id' => $odontogram->getTreatment()?->getId(),
+            'details' => $details,
+        ];
+    }
+
+    private function serializeDetail(OdontogramaDetail $detail): array
+    {
+        $faces = [];
+        foreach ($detail->getToothFaces() as $face) {
+            $faces[] = [
+                'id' => $face->getId(),
+                'face_name' => $face->getFaceName(),
+            ];
+        }
+
+        return [
+            'id' => $detail->getId(),
+            'tooth_number' => $detail->getToothNumber(),
+            'pathology' => [
+                'id' => $detail->getPathology()?->getId(),
+                'description' => $detail->getPathology()?->getDescription(),
+                'protocol_color' => $detail->getPathology()?->getProtocolColor(),
+                'visual_type' => $detail->getPathology()?->getVisualType(),
+            ],
+            'faces' => $faces,
+        ];
     }
 }
