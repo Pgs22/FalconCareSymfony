@@ -2,34 +2,34 @@
 
 namespace App\Entity;
 
-use App\Repository\OdontogramaDetailRepository;
+use App\Repository\OdontogramDetailRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
-#[ORM\Entity(repositoryClass: OdontogramaDetailRepository::class)]
-class OdontogramaDetail
+#[ORM\Entity(repositoryClass: OdontogramDetailRepository::class)]
+class OdontogramDetail
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
     private ?int $id = null;
 
-    #[ORM\Column]
+    #[ORM\Column(nullable: true)]
     private ?int $toothNumber = null;
 
-    #[ORM\ManyToOne(inversedBy: 'odontogramaDetails')]
+    #[ORM\ManyToOne(inversedBy: 'odontogramDetails')]
     #[ORM\JoinColumn(nullable: false)]
-    private ?Odontogram $odontograma = null;
+    private ?Odontogram $odontogram = null;
 
-    #[ORM\ManyToOne(inversedBy: 'odontogramaDetails')]
+    #[ORM\ManyToOne(inversedBy: 'odontogramDetails')]
     #[ORM\JoinColumn(nullable: false)]
     private ?Pathology $pathology = null;
 
     /**
      * @var Collection<int, ToothFace>
      */
-    #[ORM\OneToMany(targetEntity: ToothFace::class, mappedBy: 'odontogramaDetail')]
+    #[ORM\OneToMany(targetEntity: ToothFace::class, mappedBy: 'odontogramDetail')]
     private Collection $toothFaces;
 
     public function __construct()
@@ -47,21 +47,21 @@ class OdontogramaDetail
         return $this->toothNumber;
     }
 
-    public function setToothNumber(int $toothNumber): static
+    public function setToothNumber(?int $toothNumber): static
     {
         $this->toothNumber = $toothNumber;
 
         return $this;
     }
 
-    public function getOdontograma(): ?Odontogram
+    public function getOdontogram(): ?Odontogram
     {
-        return $this->odontograma;
+        return $this->odontogram;
     }
 
-    public function setOdontograma(?Odontogram $odontograma): static
+    public function setOdontogram(?Odontogram $odontogram): static
     {
-        $this->odontograma = $odontograma;
+        $this->odontogram = $odontogram;
 
         return $this;
     }
@@ -90,7 +90,7 @@ class OdontogramaDetail
     {
         if (!$this->toothFaces->contains($toothFace)) {
             $this->toothFaces->add($toothFace);
-            $toothFace->setOdontogramaDetail($this);
+            $toothFace->setOdontogramDetail($this);
         }
 
         return $this;
@@ -99,9 +99,8 @@ class OdontogramaDetail
     public function removeToothFace(ToothFace $toothFace): static
     {
         if ($this->toothFaces->removeElement($toothFace)) {
-            // set the owning side to null (unless already changed)
-            if ($toothFace->getOdontogramaDetail() === $this) {
-                $toothFace->setOdontogramaDetail(null);
+            if ($toothFace->getOdontogramDetail() === $this) {
+                $toothFace->setOdontogramDetail(null);
             }
         }
 

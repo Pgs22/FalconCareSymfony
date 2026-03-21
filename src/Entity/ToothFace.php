@@ -18,7 +18,7 @@ class ToothFace
 
     #[ORM\ManyToOne(inversedBy: 'toothFaces')]
     #[ORM\JoinColumn(nullable: false)]
-    private ?OdontogramaDetail $odontogramaDetail = null;
+    private ?OdontogramDetail $odontogramDetail = null;
 
     public function getId(): ?int
     {
@@ -37,14 +37,14 @@ class ToothFace
         return $this;
     }
 
-    public function getOdontogramaDetail(): ?OdontogramaDetail
+    public function getOdontogramDetail(): ?OdontogramDetail
     {
-        return $this->odontogramaDetail;
+        return $this->odontogramDetail;
     }
 
-    public function setOdontogramaDetail(?OdontogramaDetail $odontogramaDetail): static
+    public function setOdontogramDetail(?OdontogramDetail $odontogramDetail): static
     {
-        $this->odontogramaDetail = $odontogramaDetail;
+        $this->odontogramDetail = $odontogramDetail;
 
         return $this;
     }

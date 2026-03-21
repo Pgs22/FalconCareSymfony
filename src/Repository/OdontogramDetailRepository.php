@@ -2,18 +2,18 @@
 
 namespace App\Repository;
 
-use App\Entity\OdontogramaDetail;
+use App\Entity\OdontogramDetail;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
- * @extends ServiceEntityRepository<OdontogramaDetail>
+ * @extends ServiceEntityRepository<OdontogramDetail>
  */
-class OdontogramaDetailRepository extends ServiceEntityRepository
+class OdontogramDetailRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
     {
-        parent::__construct($registry, OdontogramaDetail::class);
+        parent::__construct($registry, OdontogramDetail::class);
     }
 
     //    /**

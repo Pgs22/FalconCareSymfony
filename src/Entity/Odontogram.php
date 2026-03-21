@@ -23,10 +23,10 @@ class Odontogram
     private ?Appointment $visit = null;
 
     /**
-     * @var Collection<int, OdontogramaDetail>
+     * @var Collection<int, OdontogramDetail>
      */
-    #[ORM\OneToMany(targetEntity: OdontogramaDetail::class, mappedBy: 'odontograma')]
-    private Collection $odontogramaDetails;
+    #[ORM\OneToMany(targetEntity: OdontogramDetail::class, mappedBy: 'odontogram')]
+    private Collection $odontogramDetails;
 
     #[ORM\ManyToOne(inversedBy: 'odontograms')]
     #[ORM\JoinColumn(nullable: true)]
@@ -34,7 +34,7 @@ class Odontogram
 
     public function __construct()
     {
-        $this->odontogramaDetails = new ArrayCollection();
+        $this->odontogramDetails = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -68,29 +68,29 @@ class Odontogram
 
 
     /**
-     * @return Collection<int, OdontogramaDetail>
+     * @return Collection<int, OdontogramDetail>
      */
-    public function getOdontogramaDetails(): Collection
+    public function getOdontogramDetails(): Collection
     {
-        return $this->odontogramaDetails;
+        return $this->odontogramDetails;
     }
 
-    public function addOdontogramaDetail(OdontogramaDetail $odontogramaDetail): static
+    public function addOdontogramDetail(OdontogramDetail $odontogramDetail): static
     {
-        if (!$this->odontogramaDetails->contains($odontogramaDetail)) {
-            $this->odontogramaDetails->add($odontogramaDetail);
-            $odontogramaDetail->setOdontograma($this);
+        if (!$this->odontogramDetails->contains($odontogramDetail)) {
+            $this->odontogramDetails->add($odontogramDetail);
+            $odontogramDetail->setOdontogram($this);
         }
 
         return $this;
     }
 
-    public function removeOdontogramaDetail(OdontogramaDetail $odontogramaDetail): static
+    public function removeOdontogramDetail(OdontogramDetail $odontogramDetail): static
     {
-        if ($this->odontogramaDetails->removeElement($odontogramaDetail)) {
-            // set the owning side to null (unless already changed)
-            if ($odontogramaDetail->getOdontograma() === $this) {
-                $odontogramaDetail->setOdontograma(null);
+        if ($this->odontogramDetails->removeElement($odontogramDetail)) {
+
+            if ($odontogramDetail->getOdontogram() === $this) {
+                $odontogramDetail->setOdontogram(null);
             }
         }
 

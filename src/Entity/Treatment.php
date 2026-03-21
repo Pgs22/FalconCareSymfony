@@ -31,9 +31,6 @@ class Treatment
     #[ORM\OneToMany(targetEntity: Appointment::class, mappedBy: 'treatment')]
     private Collection $appointments;
 
-    #[ORM\Column(nullable: true)]
-    private ?int $lastOdontogramId = null;
-
     /**
      * @var Collection<int, Pathology>
      */
@@ -121,23 +118,10 @@ class Treatment
     public function removeAppointment(Appointment $appointment): static
     {
         if ($this->appointments->removeElement($appointment)) {
-            // set the owning side to null (unless already changed)
             if ($appointment->getTreatment() === $this) {
                 $appointment->setTreatment(null);
             }
         }
-
-        return $this;
-    }
-
-    public function getLastOdontogramId(): ?int
-    {
-        return $this->lastOdontogramId;
-    }
-
-    public function setLastOdontogramId(?int $lastOdontogramId): static
-    {
-        $this->lastOdontogramId = $lastOdontogramId;
 
         return $this;
     }
@@ -202,7 +186,6 @@ class Treatment
     public function removeOdontogram(Odontogram $odontogram): static
     {
         if ($this->odontograms->removeElement($odontogram)) {
-            // set the owning side to null (unless already changed)
             if ($odontogram->getTreatment() === $this) {
                 $odontogram->setTreatment(null);
             }

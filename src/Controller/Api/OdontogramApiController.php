@@ -3,11 +3,11 @@
 namespace App\Controller\Api;
 
 use App\Entity\Odontogram;
-use App\Entity\OdontogramaDetail;
+use App\Entity\OdontogramDetail;
 use App\Entity\ToothFace;
 use App\Repository\AppointmentRepository;
 use App\Repository\OdontogramRepository;
-use App\Repository\OdontogramaDetailRepository;
+use App\Repository\OdontogramDetailRepository;
 use App\Repository\PathologyRepository;
 use App\Repository\TreatmentRepository;
 use Doctrine\ORM\EntityManagerInterface;
@@ -23,7 +23,7 @@ final class OdontogramApiController extends AbstractController
     public function __construct(
         private readonly AppointmentRepository $appointmentRepository,
         private readonly OdontogramRepository $odontogramRepository,
-        private readonly OdontogramaDetailRepository $odontogramaDetailRepository,
+        private readonly OdontogramDetailRepository $odontogramDetailRepository,
         private readonly TreatmentRepository $treatmentRepository,
         private readonly PathologyRepository $pathologyRepository,
         private readonly EntityManagerInterface $entityManager,
@@ -192,8 +192,8 @@ final class OdontogramApiController extends AbstractController
             ], Response::HTTP_NOT_FOUND);
         }
 
-        $detail = new OdontogramaDetail();
-        $detail->setOdontograma($odontogram);
+        $detail = new OdontogramDetail();
+        $detail->setOdontogram($odontogram);
         $detail->setToothNumber((int) $toothNumber);
         $detail->setPathology($pathology);
 
@@ -219,7 +219,7 @@ final class OdontogramApiController extends AbstractController
 
             $face = new ToothFace();
             $face->setFaceName($faceName);
-            $face->setOdontogramaDetail($detail);
+            $face->setOdontogramDetail($detail);
             $this->entityManager->persist($face);
         }
 
@@ -246,7 +246,7 @@ final class OdontogramApiController extends AbstractController
         }
 
         $items = [];
-        foreach ($odontogram->getOdontogramaDetails() as $detail) {
+        foreach ($odontogram->getOdontogramDetails() as $detail) {
             $items[] = $this->serializeDetail($detail);
         }
 
@@ -256,7 +256,7 @@ final class OdontogramApiController extends AbstractController
     #[Route('/details/{detailId}', name: 'api_odontogram_detail_delete', requirements: ['detailId' => '\d+'], methods: ['DELETE'])]
     public function deleteDetail(int $detailId): JsonResponse
     {
-        $detail = $this->odontogramaDetailRepository->find($detailId);
+        $detail = $this->odontogramDetailRepository->find($detailId);
 
         if (!$detail) {
             return $this->json([
@@ -280,7 +280,7 @@ final class OdontogramApiController extends AbstractController
     #[Route('/details/{detailId}/faces', name: 'api_tooth_face_create', requirements: ['detailId' => '\d+'], methods: ['POST'])]
     public function createFace(int $detailId, Request $request): JsonResponse
     {
-        $detail = $this->odontogramaDetailRepository->find($detailId);
+        $detail = $this->odontogramDetailRepository->find($detailId);
 
         if (!$detail) {
             return $this->json([
@@ -316,7 +316,7 @@ final class OdontogramApiController extends AbstractController
 
         $face = new ToothFace();
         $face->setFaceName($faceName);
-        $face->setOdontogramaDetail($detail);
+        $face->setOdontogramDetail($detail);
 
         $this->entityManager->persist($face);
         $this->entityManager->flush();
@@ -332,7 +332,7 @@ final class OdontogramApiController extends AbstractController
     #[Route('/details/{detailId}/faces', name: 'api_tooth_face_list', requirements: ['detailId' => '\d+'], methods: ['GET'])]
     public function listFaces(int $detailId): JsonResponse
     {
-        $detail = $this->odontogramaDetailRepository->find($detailId);
+        $detail = $this->odontogramDetailRepository->find($detailId);
 
         if (!$detail) {
             return $this->json([
@@ -354,7 +354,7 @@ final class OdontogramApiController extends AbstractController
     private function serializeOdontogram(Odontogram $odontogram): array
     {
         $details = [];
-        foreach ($odontogram->getOdontogramaDetails() as $detail) {
+        foreach ($odontogram->getOdontogramDetails() as $detail) {
             $details[] = $this->serializeDetail($detail);
         }
 
@@ -367,7 +367,7 @@ final class OdontogramApiController extends AbstractController
         ];
     }
 
-    private function serializeDetail(OdontogramaDetail $detail): array
+    private function serializeDetail(OdontogramDetail $detail): array
     {
         $faces = [];
         foreach ($detail->getToothFaces() as $face) {

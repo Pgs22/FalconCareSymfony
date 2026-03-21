@@ -8,7 +8,7 @@ use App\Entity\Appointment;
 use App\Entity\Box;
 use App\Entity\Doctor;
 use App\Entity\Odontogram;
-use App\Entity\OdontogramaDetail;
+use App\Entity\OdontogramDetail;
 use App\Entity\Pathology;
 use App\Entity\PathologyType;
 use App\Entity\ToothFace;
@@ -32,7 +32,7 @@ class AppFixtures extends Fixture
         $faker = Factory::create('es_ES');
 
         $boxes = [];
-        for ($i = 1; $i <= 3; $i++) {
+        for ($i = 1; $i <= 2; $i++) {
             $box = new Box();
             $box->setBoxName("Box $i");
             $box->setStatus(true);
@@ -69,7 +69,6 @@ class AppFixtures extends Fixture
         $admin->setPassword($this->hasher->hashPassword($admin, 'admin123'));
         $manager->persist($admin);
 
-        // PATIENTS
         for ($i = 0; $i < 10; $i++) {
             $p = new Patient();
             $p->setFirstName($faker->firstName);
@@ -107,22 +106,20 @@ class AppFixtures extends Fixture
             $appointment->setDurationMinutes(30);
             $manager->persist($appointment);
 
-            // ODONTOGRAM
             $o = new Odontogram();
             $o->setStatus("Pendiente");
             $o->setVisit($appointment);
             $o->setTreatment($t); 
             $manager->persist($o);
 
-            // ODONTOGRAMDETAILS AND PATOLOGÍES
             for ($j = 0; $j < 2; $j++) {
-                $det = new OdontogramaDetail();
+                $det = new OdontogramDetail();
                 $tooth = $faker->boolean(80) ? $faker->numberBetween(11, 48) : null;
                 $det->setToothNumber($tooth);
-                $det->setOdontograma($o);
+                $det->setOdontogram($o);
                 
                 $path = new Pathology();
-                $path->setDescription("Hallazgo");
+                $path->setDescription("Hallazgo dental");
                 $path->setProtocolColor($faker->hexColor);
                 $path->setPathologyType($faker->randomElement($pathologyTypes));
                 $path->setTreatment($t); 
@@ -133,8 +130,8 @@ class AppFixtures extends Fixture
 
                 if ($tooth) {
                     $face = new ToothFace();
-                    $face->setFaceName("V");
-                    $face->setOdontogramaDetail($det);
+                    $face->setFaceName($faker->randomElement(['V', 'M', 'D', 'O', 'L']));
+                    $face->setOdontogramDetail($det);
                     $manager->persist($face);
                 }
             }
