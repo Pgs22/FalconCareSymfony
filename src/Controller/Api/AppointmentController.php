@@ -67,34 +67,25 @@ final class AppointmentController extends AbstractController
     ): JsonResponse {
         $appointment = new Appointment();
         
-        // Recibimos el JSON de Angular
         $data = json_decode($request->getContent(), true);
 
-        // 1. Usamos el Formulario para mapear los datos básicos 
-        // (Paciente, Doctor, Box, Fecha, Hora)
         $form = $this->createForm(AppointmentType::class, $appointment);
         $form->submit($data); 
 
         if ($form->isSubmitted() && $form->isValid()) {
 
-            // 2. LLAMADA EXPLÍCITA A TUS MÉTODOS DE ENTIDAD
-            // Si Angular envía "isFirstVisit": true, llamamos al set de la agenda
             if (!empty($data['isFirstVisit'])) {
                 $appointment->setFirstVisit(true);
             }
 
-            // Si Angular envía "isUrgency": true, llamamos al set de urgencia
             if (!empty($data['isUrgency'])) {
                 $appointment->setUrgency(true);
             }
 
-            // 3. Si el administrativo editó el tiempo a mano en Angular, 
-            // este valor tiene la última palabra y sobrescribe los 30 min.
             if (isset($data['durationMinutes'])) {
                 $appointment->setDurationMinutes((int)$data['durationMinutes']);
             }
 
-            // 4. Validación de disponibilidad del Box
             $busy = $repository->findOneBy([ 
                 'visitDate' => $appointment->getVisitDate(),
                 'visitTime' => $appointment->getVisitTime(),
@@ -105,7 +96,6 @@ final class AppointmentController extends AbstractController
                 return $this->json(['error' => 'El Box ya está ocupado'], Response::HTTP_CONFLICT);
             }
 
-            // 5. Guardar en Base de Datos
             $entityManager->persist($appointment);
             $entityManager->flush();
 
@@ -189,7 +179,7 @@ final class AppointmentController extends AbstractController
                 ->where('a.visitDate = :date')
                 ->andWhere('a.visitTime = :time')
                 ->andWhere('a.box = :box')
-                ->andWhere('a.id != :currentId') // Que no sea la propia cita que editamos
+                ->andWhere('a.id != :currentId')
                 ->setParameter('date', $appointment->getVisitDate())
                 ->setParameter('time', $appointment->getVisitTime())
                 ->setParameter('box', $appointment->getBox())
