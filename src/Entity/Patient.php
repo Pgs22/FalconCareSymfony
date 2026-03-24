@@ -55,6 +55,9 @@ class Patient
     #[ORM\Column(type: Types::TEXT)]
     private ?string $medicationAllergies = null;
 
+    #[ORM\Column(nullable: true)]
+    private ?int $lastOdontogramId = null;
+
     /**
      * @var Collection<int, Appointment>
      */
@@ -73,6 +76,17 @@ class Patient
         $this->documents = new ArrayCollection();
     }
 
+    public function getLastOdontogramId(): ?int
+    {
+        return $this->lastOdontogramId;
+    }
+
+    public function setLastOdontogramId(?int $lastOdontogramId): static
+    {
+        $this->lastOdontogramId = $lastOdontogramId;
+
+        return $this;
+    }
     public function getId(): ?int
     {
         return $this->id;
