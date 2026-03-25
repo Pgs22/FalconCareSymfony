@@ -114,39 +114,32 @@ final class AppointmentController extends AbstractController
     #[Route('/{id}/open', name: 'app_appointment_open', methods: ['GET'])]
     public function open(
         Appointment $appointment, 
-        OdontogramRepository $odontogramRepository,
         EntityManagerInterface $entityManager
     ): Response {
         $patient = $appointment->getPatient();
-        $lastId = $patient->getLastOdontogramId();
+        
+        // 1. Miramos si el paciente ya tiene su "Ficha Dental Única"
+        $odontogramId = $patient->getLastIdOdontogram();
 
-        // 1. Buscamos el último registro físico
-        $lastOdontogram = $lastId ? $odontogramRepository->find($lastId) : null;
-
-        // 2. ¿Necesitamos crear uno nuevo? 
-        // Solo si no hay ninguno previo O si el último ya se cerró manualmente.
-        if (!$lastOdontogram || $lastOdontogram->getStatus() === 'Cerrado') {
+        // 2. Si es un paciente nuevo y no tiene, se la creamos una sola vez
+        if (!$odontogramId) {
             $newOdontogram = new Odontogram();
-            $newOdontogram->setVisit($appointment);
-            $newOdontogram->setStatus('En Proceso'); // Empieza abierto para trabajar
+            $newOdontogram->setVisit($appointment); // Referencia a la cita de creación
+            $newOdontogram->setStatus('Abierto'); // Siempre abierto para editar
 
             $entityManager->persist($newOdontogram);
             $entityManager->flush();
 
-            // Actualizamos al paciente para que sepa cuál es su "foto" actual
+            // Guardamos el ID en el paciente para siempre
             $patient->setLastIdOdontogram($newOdontogram->getId());
             $entityManager->flush();
             
             $odontogramId = $newOdontogram->getId();
-        } else {
-            // Si el último sigue "En Proceso", seguimos usando el mismo
-            $odontogramId = $lastOdontogram->getId();
         }
 
-        // 3. Redirigimos a Angular pasándole el ID
+        // 3. Redirigimos al mismo odontograma de siempre
         return $this->redirectToRoute('app_odontogram_view', ['id' => $odontogramId]);
     }
-
 
     #[Route('/{id}', name: 'app_appointment_show', methods: ['GET'])]
     public function show(Appointment $appointment): JsonResponse
@@ -176,26 +169,12 @@ final class AppointmentController extends AbstractController
     }
 
     #[Route('/{id}/close', name: 'app_appointment_close', methods: ['POST'])]
-    public function close(
-        Appointment $appointment, 
-        Request $request, 
-        EntityManagerInterface $entityManager
-    ): JsonResponse {
-        $data = json_decode($request->getContent(), true);
-        $shouldCloseOdontogram = $data['closeOdontogram'] ?? false;
-
-        // 1. Cerramos la cita siempre
+    public function close(Appointment $appointment, EntityManagerInterface $em): JsonResponse 
+    {
         $appointment->setStatus('Finalizada');
+        $em->flush();
 
-        // 2. Cerramos el odontograma solo si Angular nos lo pide
-        $odontogram = $appointment->getOdontogram();
-        if ($odontogram && $shouldCloseOdontogram) {
-            $odontogram->setStatus('Cerrado');
-        }
-
-        $entityManager->flush();
-
-        return $this->json(['message' => 'Cita procesada correctamente']);
+        return $this->json(['message' => 'Cita cerrada']);
     }
 
     #[Route('/{id}/update', name: 'app_appointment_update', methods: ['POST', 'PUT'])]
