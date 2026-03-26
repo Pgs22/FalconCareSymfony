@@ -3,12 +3,15 @@
 namespace App\Controller\Api;
 
 use App\Entity\Patient;
+use App\Entity\User;
 use App\Repository\PatientRepository;
+use App\Repository\UserRepository;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Route('/api/patients')]
@@ -83,14 +86,19 @@ final class PatientApiController extends AbstractController
     #[OA\Post(
         path: '/api/patients',
         summary: 'Create patient',
-        security: [['bearerAuth' => []]],
+        security: [],
         requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(type: 'object')),
         responses: [
             new OA\Response(response: 201, description: 'Created'),
             new OA\Response(response: 400, description: 'Bad request'),
         ]
     )]
-    public function create(Request $request, PatientRepository $repo): JsonResponse
+    public function create(
+        Request $request,
+        PatientRepository $repo,
+        UserRepository $userRepository,
+        UserPasswordHasherInterface $passwordHasher
+    ): JsonResponse
     {
         $data = $request->getContentTypeFormat() === 'json' ? $request->toArray() : $request->request->all();
 
@@ -106,13 +114,18 @@ final class PatientApiController extends AbstractController
             return $this->json(['message' => 'Patient already exists'], Response::HTTP_BAD_REQUEST);
         }
 
+        $email = (string) $data['email'];
+        if ($userRepository->findOneByEmailCaseInsensitive($email)) {
+            return $this->json(['message' => 'Email already registered'], Response::HTTP_BAD_REQUEST);
+        }
+
         $patient = new Patient();
         $patient->setIdentityDocument($identityDocument);
         $patient->setFirstName((string) $data['firstName']);
         $patient->setLastName((string) $data['lastName']);
         $patient->setSsNumber(isset($data['ssNumber']) ? (string) $data['ssNumber'] : null);
         $patient->setPhone((string) $data['phone']);
-        $patient->setEmail((string) $data['email']);
+        $patient->setEmail($email);
         $patient->setAddress((string) $data['address']);
         $patient->setConsultationReason((string) $data['consultationReason']);
         $patient->setFamilyHistory((string) $data['familyHistory']);
@@ -131,6 +144,17 @@ final class PatientApiController extends AbstractController
         }
 
         $repo->create($patient);
+
+        $plainPassword = (string) ($data['plainPassword'] ?? '');
+        if (trim($plainPassword) !== '') {
+            $user = new User();
+            $user->setEmail($email);
+            $user->setRoles(['ROLE_USER']);
+            $user->setPassword($passwordHasher->hashPassword($user, $plainPassword));
+            $entityManager = $repo->getEntityManager();
+            $entityManager->persist($user);
+            $entityManager->flush();
+        }
 
         return $this->json(self::serializePatient($patient), Response::HTTP_CREATED);
     }

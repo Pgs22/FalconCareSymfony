@@ -83,7 +83,7 @@ final class AuthController extends AbstractController
         }
 
         /** @var User|null $user */
-        $user = $this->userRepository->findOneBy(['email' => $email]);
+        $user = $this->userRepository->findOneByEmailCaseInsensitive($email);
         if (!$user) {
             return $this->json(['error' => 'Invalid credentials'], Response::HTTP_UNAUTHORIZED);
         }
