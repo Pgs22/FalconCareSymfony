@@ -33,6 +33,11 @@ final class ApiJwtAuthenticator extends AbstractAuthenticator
             return false;
         }
 
+        // Public patient registration endpoint.
+        if ($path === '/api/patients' && $request->isMethod('POST')) {
+            return false;
+        }
+
         $auth = (string) $request->headers->get('Authorization', '');
 
         return str_starts_with($auth, 'Bearer ');
