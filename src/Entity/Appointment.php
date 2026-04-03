@@ -44,7 +44,7 @@ class Appointment
     private ?Box $box = null;
 
     #[ORM\ManyToOne(inversedBy: 'appointments')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: true)]
     private ?Treatment $treatment = null;
 
     /**
@@ -223,20 +223,25 @@ class Appointment
     }
 
     public function setFirstVisit(bool $isFirstVisit): self
-    {
-        if ($isFirstVisit) {
+{
+    if ($isFirstVisit) {
+        if ($this->durationMinutes === null) {
             $this->durationMinutes = 30;
-            $this->consultationReason = 'Primera Visita';
         }
-        return $this;
+        $this->consultationReason = 'Primera Visita';
     }
-    public function setUrgency(bool $isUrgency): self
-    {
-        if ($isUrgency) {
+    return $this;
+}
+
+public function setUrgency(bool $isUrgency): self
+{
+    if ($isUrgency) {
+        if ($this->durationMinutes === null) {
             $this->durationMinutes = 30;
-            $this->consultationReason = 'Urgencia Médica';
         }
-        return $this;
+        $this->consultationReason = 'Urgencia';
     }
+    return $this;
+}
     
 }

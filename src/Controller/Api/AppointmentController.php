@@ -84,9 +84,14 @@ final class AppointmentController extends AbstractController
                 $appointment->setUrgency(true);
             }
 
+            if ($appointment->getDurationMinutes() === null) {
+                $appointment->setDurationMinutes(15);
+            }
+
             if (isset($data['durationMinutes'])) {
                 $appointment->setDurationMinutes((int)$data['durationMinutes']);
             }
+
 
             $busy = $repository->findOneBy([ 
                 'visitDate' => $appointment->getVisitDate(),
@@ -95,7 +100,7 @@ final class AppointmentController extends AbstractController
             ]);
 
             if ($busy) {
-                return $this->json(['error' => 'El Box ya está ocupado'], Response::HTTP_CONFLICT);
+                return $this->json(['error' => 'El Box està ocupat'], Response::HTTP_CONFLICT);
             }
 
             $entityManager->persist($appointment);
@@ -104,11 +109,11 @@ final class AppointmentController extends AbstractController
             return $this->json([
                 'id' => $appointment->getId(),
                 'duration' => $appointment->getDurationMinutes(),
-                'message' => 'Cita creada con éxito'
+                'message' => 'Cita creada amb èxit'
             ], Response::HTTP_CREATED);
         }
 
-        return $this->json(['errors' => 'Datos inválidos'], Response::HTTP_BAD_REQUEST);
+        return $this->json(['errors' => 'Dades invàlides'], Response::HTTP_BAD_REQUEST);
     }
 
     #[Route('/{id}/open', name: 'app_appointment_open', methods: ['GET'])]
@@ -119,7 +124,7 @@ final class AppointmentController extends AbstractController
         $patient = $appointment->getPatient();
         
         // 1. Miramos si el paciente ya tiene su "Ficha Dental Única"
-        $odontogramId = $patient->getLastIdOdontogram();
+        $odontogramId = $patient->getLastOdontogramId();
 
         // 2. Si es un paciente nuevo y no tiene, se la creamos una sola vez
         if (!$odontogramId) {
@@ -131,7 +136,7 @@ final class AppointmentController extends AbstractController
             $entityManager->flush();
 
             // Guardamos el ID en el paciente para siempre
-            $patient->setLastIdOdontogram($newOdontogram->getId());
+            $patient->setLastOdontogramId($newOdontogram->getId());
             $entityManager->flush();
             
             $odontogramId = $newOdontogram->getId();
@@ -171,10 +176,10 @@ final class AppointmentController extends AbstractController
     #[Route('/{id}/close', name: 'app_appointment_close', methods: ['POST'])]
     public function close(Appointment $appointment, EntityManagerInterface $em): JsonResponse 
     {
-        $appointment->setStatus('Finalizada');
+        $appointment->setStatus('Finalitzada');
         $em->flush();
 
-        return $this->json(['message' => 'Cita cerrada']);
+        return $this->json(['message' => 'Cita tancada']);
     }
 
     #[Route('/{id}/update', name: 'app_appointment_update', methods: ['POST', 'PUT'])]
@@ -187,7 +192,7 @@ final class AppointmentController extends AbstractController
         $data = json_decode($request->getContent(), true);
 
         if (!$data) {
-            return $this->json(['error' => 'JSON inválido'], Response::HTTP_BAD_REQUEST);
+            return $this->json(['error' => 'JSON invàlid'], Response::HTTP_BAD_REQUEST);
         }
 
         $form = $this->createForm(AppointmentType::class, $appointment, ['csrf_protection' => false]);
@@ -209,7 +214,7 @@ final class AppointmentController extends AbstractController
                 ->getOneOrNullResult();
 
             if ($busy) {
-                return $this->json(['error' => 'No se puede mover la cita: el Box ya está ocupado'], Response::HTTP_CONFLICT);
+                return $this->json(['error' => 'No es pot moure la cita: el Box ja està ocupat'], Response::HTTP_CONFLICT);
             }
 
             $entityManager->flush();
@@ -218,12 +223,12 @@ final class AppointmentController extends AbstractController
                 'status' => 'updated',
                 'id' => $appointment->getId(),
                 'duration' => $appointment->getDurationMinutes(),
-                'message' => 'Cita actualizada correctamente'
+                'message' => 'Cita actualitzada correctament'
             ]);
         }
 
         return $this->json([
-            'error' => 'Error de validación',
+            'error' => 'Error de validació',
             'details' => (string) $form->getErrors(true)
         ], Response::HTTP_BAD_REQUEST);
     }
@@ -234,6 +239,6 @@ final class AppointmentController extends AbstractController
         $entityManager->remove($appointment);
         $entityManager->flush();
 
-        return $this->json(['message' => 'Cita eliminada correctamente']);
+        return $this->json(['message' => 'Cita eliminada correctament']);
     }
 }
