@@ -223,25 +223,25 @@ class Appointment
     }
 
     public function setFirstVisit(bool $isFirstVisit): self
-{
-    if ($isFirstVisit) {
-        if ($this->durationMinutes === null) {
-            $this->durationMinutes = 30;
+    {
+        if ($isFirstVisit) {
+            if ($this->durationMinutes === null) {
+                $this->durationMinutes = 30;
+            }
+            $this->consultationReason = 'Primera Visita';
         }
-        $this->consultationReason = 'Primera Visita';
+        return $this;
     }
-    return $this;
-}
 
-public function setUrgency(bool $isUrgency): self
-{
-    if ($isUrgency) {
-        if ($this->durationMinutes === null) {
-            $this->durationMinutes = 30;
+    public function setUrgency(bool $isUrgency): self
+    {
+        if ($isUrgency) {
+            if ($this->durationMinutes === null) {
+                $this->durationMinutes = 30;
+            }
+            $this->consultationReason = 'Urgencia';
         }
-        $this->consultationReason = 'Urgencia';
+        return $this;
     }
-    return $this;
-}
     
 }
