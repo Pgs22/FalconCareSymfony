@@ -5,7 +5,6 @@ namespace App\Controller\Api;
 use App\Entity\Appointment;
 use App\Form\AppointmentType;
 use App\Repository\AppointmentRepository;
-use App\Repository\OdontogramRepository;
 use App\Entity\Odontogram;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -68,7 +67,6 @@ final class AppointmentController extends AbstractController
         AppointmentRepository $repository
     ): JsonResponse {
         $appointment = new Appointment();
-        
         $data = json_decode($request->getContent(), true);
 
         $form = $this->createForm(AppointmentType::class, $appointment);
@@ -91,7 +89,6 @@ final class AppointmentController extends AbstractController
             if (isset($data['durationMinutes'])) {
                 $appointment->setDurationMinutes((int)$data['durationMinutes']);
             }
-
 
             $busy = $repository->findOneBy([ 
                 'visitDate' => $appointment->getVisitDate(),
@@ -116,40 +113,34 @@ final class AppointmentController extends AbstractController
         return $this->json(['errors' => 'Dades invàlides'], Response::HTTP_BAD_REQUEST);
     }
 
-    #[Route('/{id}/open', name: 'app_appointment_open', methods: ['GET'])]
+    #[Route('/{id}/open', name: 'app_appointment_open', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function open(
         Appointment $appointment, 
         EntityManagerInterface $entityManager
     ): Response {
         $patient = $appointment->getPatient();
-        
-        // 1. Miramos si el paciente ya tiene su "Ficha Dental Única"
         $odontogramId = $patient->getLastOdontogramId();
 
-        // 2. Si es un paciente nuevo y no tiene, se la creamos una sola vez
         if (!$odontogramId) {
             $newOdontogram = new Odontogram();
-            $newOdontogram->setVisit($appointment); // Referencia a la cita de creación
-            $newOdontogram->setStatus('Abierto'); // Siempre abierto para editar
+            $newOdontogram->setVisit($appointment);
+            $newOdontogram->setStatus('Abierto');
 
             $entityManager->persist($newOdontogram);
             $entityManager->flush();
 
-            // Guardamos el ID en el paciente para siempre
             $patient->setLastOdontogramId($newOdontogram->getId());
             $entityManager->flush();
             
             $odontogramId = $newOdontogram->getId();
         }
 
-        // 3. Redirigimos al mismo odontograma de siempre
         return $this->redirectToRoute('app_odontogram_view', ['id' => $odontogramId]);
     }
 
-    #[Route('/{id}', name: 'app_appointment_show', methods: ['GET'])]
+    #[Route('/{id}', name: 'app_appointment_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Appointment $appointment): JsonResponse
     {
-
         return $this->json([
             'id' => $appointment->getId(),
             'date' => $appointment->getVisitDate()->format('Y-m-d'),
@@ -158,8 +149,6 @@ final class AppointmentController extends AbstractController
             'observations' => $appointment->getObservations(),
             'status' => $appointment->getStatus(),
             'duration' => $appointment->getDurationMinutes(),
-            
-            
             'patient' => [
                 'id' => $appointment->getPatient()->getId(),
                 'name' => $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName(),
@@ -173,7 +162,7 @@ final class AppointmentController extends AbstractController
         ]);
     }
 
-    #[Route('/{id}/close', name: 'app_appointment_close', methods: ['POST'])]
+    #[Route('/{id}/close', name: 'app_appointment_close', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function close(Appointment $appointment, EntityManagerInterface $em): JsonResponse 
     {
         $appointment->setStatus('Finalitzada');
@@ -182,7 +171,7 @@ final class AppointmentController extends AbstractController
         return $this->json(['message' => 'Cita tancada']);
     }
 
-    #[Route('/{id}/update', name: 'app_appointment_update', methods: ['POST', 'PUT'])]
+    #[Route('/{id}/update', name: 'app_appointment_update', requirements: ['id' => '\d+'], methods: ['POST', 'PUT'])]
     public function update(
         Request $request, 
         Appointment $appointment, 
@@ -196,7 +185,6 @@ final class AppointmentController extends AbstractController
         }
 
         $form = $this->createForm(AppointmentType::class, $appointment, ['csrf_protection' => false]);
-        
         $form->submit($data, false);
 
         if ($form->isSubmitted() && $form->isValid()) {
@@ -233,7 +221,7 @@ final class AppointmentController extends AbstractController
         ], Response::HTTP_BAD_REQUEST);
     }
 
-    #[Route('/{id}', name: 'app_appointment_delete', methods: ['DELETE'])]
+    #[Route('/{id}', name: 'app_appointment_delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
     public function delete(Appointment $appointment, EntityManagerInterface $entityManager): JsonResponse
     {
         $entityManager->remove($appointment);
