@@ -25,38 +25,42 @@ final class TreatmentController extends AbstractController
         AppointmentRepository $appRepo
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
+        
         if (!$data) {
             return $this->json(['error' => 'Dades invàlides'], 400);
         }
 
         $treatment = new Treatment();
         $treatment->setTreatmentName($data['name'] ?? 'Nou Pla de Tractament');
+        $treatment->setDescription($data['description'] ?? 'Creat des de l\'odontograma');
         $treatment->setStatus('Actiu');
+        $treatment->setEstimatedDuration($data['duration'] ?? 30);
 
-        if (!empty($data['pathology_ids'])) {
+        if (!empty($data['pathology_ids']) && is_array($data['pathology_ids'])) {
             foreach ($data['pathology_ids'] as $id) {
-                $path = $pathRepo->find($id);
+                $path = $pathRepo->find((int)$id); // Forzamos entero
                 if ($path) {
                     $treatment->addPathology($path);
                 }
             }
         }
 
+        $em->persist($treatment);
+
         if (!empty($data['appointment_id'])) {
-            $appointment = $appRepo->find($data['appointment_id']);
+            $appointment = $appRepo->find((int)$data['appointment_id']);
             if ($appointment) {
                 $appointment->setTreatment($treatment);
                 $em->persist($appointment);
             }
         }
 
-        $em->persist($treatment);
         $em->flush();
 
         return $this->json([
             'id' => $treatment->getId(),
             'status' => 'success',
-            'message' => 'Tractament creat i vinculat a la cita'
+            'message' => 'Tractament creat i vinculat correctament'
         ]);
     }
 

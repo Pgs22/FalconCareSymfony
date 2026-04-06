@@ -36,7 +36,7 @@ class AppointmentType extends AbstractType
             ])
             ->add('treatment', EntityType::class, [
                 'class' => Treatment::class,
-                'choice_label' => 'id',
+                'required' => false,
             ])
         ;
     }
