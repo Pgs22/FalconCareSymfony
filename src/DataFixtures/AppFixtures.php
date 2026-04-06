@@ -31,7 +31,6 @@ class AppFixtures extends Fixture
     {
         $faker = Factory::create('es_ES');
 
-        // 1. BOXES (Solo 2 para que coincida con tu CSS de la agenda)
         $boxes = [];
         for ($i = 1; $i <= 2; $i++) {
             $box = new Box();
@@ -42,22 +41,24 @@ class AppFixtures extends Fixture
             $boxes[] = $box;
         }
 
-        // 2. DOCTORES (3 profesionales)
         $doctors = [];
-        for ($i = 0; $i < 3; $i++) {
+        $daysPossible = ['dilluns', 'dimarts', 'dimecres', 'dijous', 'divendres'];
+
+        for ($i = 0; $i < 5; $i++) {
             $dr = new Doctor();
             $dr->setFirstName($faker->firstName);
             $dr->setLastNames($faker->lastName . " " . $faker->lastName);
-            $dr->setSpecialty("Odontología General");
-            $dr->setPhone($faker->phoneNumber);
+            $dr->setSpecialty("Odontologia General");
             $dr->setEmail($faker->email);
+            $dr->setPhone($faker->phoneNumber);            
+            $dayAssign = $daysPossible[$i];
+            $dr->setAssignedWeekday($dayAssign);            
             $manager->persist($dr);
             $doctors[] = $dr;
         }
 
-        // 3. TIPOS DE PATOLOGÍA (Para el catálogo del odontograma)
         $pathologyTypes = [];
-        $catalogo = [['Caries', 30], ['Limpieza', 30], ['Endodoncia', 60]];
+        $catalogo = [['Càries', 30], ['Neteja', 30], ['Endodòncia', 60]];
         foreach ($catalogo as [$nombre, $duracion]) {
             $type = new PathologyType();
             $type->setName($nombre);
@@ -66,14 +67,12 @@ class AppFixtures extends Fixture
             $pathologyTypes[$nombre] = $type;
         }
 
-        // 4. USUARIO ADMINISTRADOR
         $admin = new User();
         $admin->setEmail('admin@falconcare.com');
         $admin->setRoles(['ROLE_ADMIN']);
         $admin->setPassword($this->hasher->hashPassword($admin, 'admin123'));
         $manager->persist($admin);
 
-        // 5. PACIENTES Y SUS FLUJOS COMPLETOS (Cita + Odontograma)
         for ($i = 0; $i < 10; $i++) {
             $p = new Patient();
             $p->setFirstName($faker->firstName);
@@ -84,33 +83,28 @@ class AppFixtures extends Fixture
             $p->setPhone($faker->phoneNumber);
             $p->setAddress($faker->address);
             
-            // Importante: Tu entidad Patient usa DateTimeImmutable
             $p->setRegistrationDate(new \DateTimeImmutable());
             
-            // Rellenamos campos obligatorios según tu migración
-            $p->setConsultationReason("Revisión de rutina");
-            $p->setFamilyHistory("Ninguno relevante");
-            $p->setHealthStatus("Buen estado general");
+            $p->setConsultationReason("Revisió de rutina");
+            $p->setFamilyHistory("Cap rellevant");
+            $p->setHealthStatus("Bon estat general");
             $p->setLifestyleHabits("Saludable");
-            $p->setMedicationAllergies("Ninguna conocida");
+            $p->setMedicationAllergies("Cap coneguda");
             $manager->persist($p);
 
-            // Creamos un Tratamiento base
             $t = new Treatment();
-            $t->setTreatmentName("Plan Preventivo - " . $p->getFirstName());
-            $t->setDescription("Seguimiento anual y limpieza");
+            $t->setTreatmentName("Pla Preventiu - " . $p->getFirstName());
+            $t->setDescription("Seguiment anual i neteja");
             $t->setEstimatedDuration(30);
-            $t->setStatus("Activo");
+            $t->setStatus("Actiu");
             $manager->persist($t);
 
-            // Creamos la Cita (Appointment)
             $date = $faker->dateTimeBetween('now', '+1 month');
             $appointment = new Appointment();
-            // Doctrine gestiona la conversión de DateTime a DATE/TIME en DB
             $appointment->setVisitDate($date); 
             $appointment->setVisitTime($date); 
-            $appointment->setConsultationReason("Revisión");
-            $appointment->setObservations("Paciente citado para control");
+            $appointment->setConsultationReason("Revisió");
+            $appointment->setObservations("Pacient citat per control");
             $appointment->setStatus("Programada");
             $appointment->setDurationMinutes(30);
             $appointment->setPatient($p);
@@ -119,16 +113,14 @@ class AppFixtures extends Fixture
             $appointment->setTreatment($t);
             $manager->persist($appointment);
 
-            // Creamos el Odontograma vinculado a la cita
             $o = new Odontogram();
             $o->setStatus("Pendiente");
             $o->setVisit($appointment);
             $o->setTreatment($t);
             $manager->persist($o);
 
-            // Si es el primer paciente, añadimos datos específicos para testear el visualizador
             if ($i === 0) {
-                $this->addTestData($manager, $o, $pathologyTypes['Caries'], $t);
+                $this->addTestData($manager, $o, $pathologyTypes['Càries'], $t);
             }
         }
 
@@ -137,13 +129,12 @@ class AppFixtures extends Fixture
 
     private function addTestData($manager, $o, $type, $t)
     {
-        // Caso: Diente 16 con Caries en 3 caras (Oclusal, Mesial, Distal)
         $path = new Pathology();
-        $path->setDescription("Caries profunda detectada");
-        $path->setProtocolColor("#FF0000"); // Rojo
+        $path->setDescription("Càries profunda detectada");
+        $path->setProtocolColor("#FF0000");
         $path->setPathologyType($type);
         $path->setTreatment($t);
-        $path->setVisualType("Hallazgo"); 
+        $path->setVisualType("Troballa"); 
         $manager->persist($path);
 
         $det = new OdontogramDetail();
