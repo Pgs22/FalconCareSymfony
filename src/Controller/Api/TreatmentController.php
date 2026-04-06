@@ -46,7 +46,6 @@ final class Treatmentontroller extends AbstractController
         PatientRepository $patientRepo, 
         TreatmentRepository $treatmentRepo
     ): JsonResponse {
-        // 1. Buscamos el paciente
         $patient = $patientRepo->find($id);
         if (!$patient) {
             return $this->json(['error' => 'Pacient no trobat'], 404);
