@@ -60,6 +60,30 @@ final class AppointmentController extends AbstractController
         return $this->json($this->serializeAppointments($appointments));
     }
 
+    private function isBoxOccupied(AppointmentRepository $repository, Appointment $newApp): bool 
+    {
+        $existingAppointments = $repository->findBy([
+            'visitDate' => $newApp->getVisitDate(),
+            'box' => $newApp->getBox()
+        ]);
+
+        $newStart = $newApp->getVisitTime();
+        $newEnd = (clone $newStart)->modify("+{$newApp->getDurationMinutes()} minutes");
+
+        foreach ($existingAppointments as $existing) {
+            if ($existing->getId() === $newApp->getId()) continue;
+
+            $exStart = $existing->getVisitTime();
+            $exEnd = (clone $exStart)->modify("+{$existing->getDurationMinutes()} minutes");
+
+            if ($newStart < $exEnd && $newEnd > $exStart) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
     public function new(
         Request $request, 
@@ -77,27 +101,20 @@ final class AppointmentController extends AbstractController
             if (!empty($data['isFirstVisit'])) {
                 $appointment->setFirstVisit(true);
             }
-
             if (!empty($data['isUrgency'])) {
                 $appointment->setUrgency(true);
-            }
-
-            if ($appointment->getDurationMinutes() === null) {
-                $appointment->setDurationMinutes(15);
             }
 
             if (isset($data['durationMinutes'])) {
                 $appointment->setDurationMinutes((int)$data['durationMinutes']);
             }
 
-            $busy = $repository->findOneBy([ 
-                'visitDate' => $appointment->getVisitDate(),
-                'visitTime' => $appointment->getVisitTime(),
-                'box' => $appointment->getBox()
-            ]);
+            if ($appointment->getDurationMinutes() === null) {
+                $appointment->setDurationMinutes(15);
+            }
 
-            if ($busy) {
-                return $this->json(['error' => 'El Box està ocupat'], Response::HTTP_CONFLICT);
+            if ($this->isBoxOccupied($repository, $appointment)) {
+                return $this->json(['error' => 'El Box està ocupat en aquesta franja horària'], Response::HTTP_CONFLICT);
             }
 
             $entityManager->persist($appointment);
@@ -179,46 +196,27 @@ final class AppointmentController extends AbstractController
         AppointmentRepository $repository
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
-
-        if (!$data) {
-            return $this->json(['error' => 'JSON invàlid'], Response::HTTP_BAD_REQUEST);
-        }
+        if (!$data) return $this->json(['error' => 'JSON invàlid'], 400);
 
         $form = $this->createForm(AppointmentType::class, $appointment, ['csrf_protection' => false]);
         $form->submit($data, false);
 
         if ($form->isSubmitted() && $form->isValid()) {
             
-            $busy = $repository->createQueryBuilder('a')
-                ->where('a.visitDate = :date')
-                ->andWhere('a.visitTime = :time')
-                ->andWhere('a.box = :box')
-                ->andWhere('a.id != :currentId')
-                ->setParameter('date', $appointment->getVisitDate())
-                ->setParameter('time', $appointment->getVisitTime())
-                ->setParameter('box', $appointment->getBox())
-                ->setParameter('currentId', $appointment->getId())
-                ->getQuery()
-                ->getOneOrNullResult();
-
-            if ($busy) {
-                return $this->json(['error' => 'No es pot moure la cita: el Box ja està ocupat'], Response::HTTP_CONFLICT);
+            // Validar si el nuevo horario/box está libre (excluyendo esta misma cita)
+            if ($this->isBoxOccupied($repository, $appointment)) {
+                return $this->json(['error' => 'No es pot moure la cita: el Box ja està ocupat'], 409);
             }
 
             $entityManager->flush();
-
             return $this->json([
                 'status' => 'updated',
                 'id' => $appointment->getId(),
                 'duration' => $appointment->getDurationMinutes(),
-                'message' => 'Cita actualitzada correctament'
+                'message' => 'Cita actualitzada'
             ]);
         }
-
-        return $this->json([
-            'error' => 'Error de validació',
-            'details' => (string) $form->getErrors(true)
-        ], Response::HTTP_BAD_REQUEST);
+        return $this->json(['error' => 'Error de validació'], 400);
     }
 
     #[Route('/{id}', name: 'app_appointment_delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]

@@ -28,7 +28,6 @@ class AppointmentRepository extends ServiceEntityRepository
     
     public function findByWeek(\DateTime $date): array
     {
-        // Calculamos el inicio (Lunes) y fin (Domingo) de esa semana
         $startOfWeek = (clone $date)->modify('monday this week')->setTime(0, 0);
         $endOfWeek = (clone $date)->modify('sunday this week')->setTime(23, 59, 59);
 
@@ -41,5 +40,39 @@ class AppointmentRepository extends ServiceEntityRepository
             ->addOrderBy('a.visitTime', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    public function findOverlappingAppointments($date, $startTime, int $duration, $boxId, $excludeId = null): array 
+    {
+        if ($startTime instanceof \DateTimeInterface) {
+            $start = \DateTimeImmutable::createFromInterface($startTime);
+        } else {
+            $start = new \DateTimeImmutable($startTime ?? 'now');
+        }
+
+        // 1. Calculamos el fin incluyendo la limpieza de la NUEVA cita
+        $totalDuration = $duration + Appointment::CLEANING_TIME;
+        $endTime = $start->modify("+" . $totalDuration . " minutes");
+
+        $qb = $this->createQueryBuilder('a')
+            ->where('a.visitDate = :date')
+            ->andWhere('a.box = :boxId');
+
+        // ... (resto de la consulta igual) ...
+
+        $results = $qb->getQuery()->getResult();
+
+        return array_filter($results, function(Appointment $existing) use ($start, $endTime) {
+            $exStartRaw = $existing->getVisitTime();
+            if (!$exStartRaw) return false;
+
+            $exStart = \DateTimeImmutable::createFromInterface($exStartRaw);
+            
+            // 2. IMPORTANTE: También sumamos la limpieza a las citas que ya están en la DB
+            $exTotalDuration = $existing->getTotalDurationWithCleaning(); 
+            $exEnd = $exStart->modify("+" . $exTotalDuration . " minutes");
+            
+            return ($start < $exEnd && $endTime > $exStart);
+        });
     }
 }
