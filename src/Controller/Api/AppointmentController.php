@@ -31,8 +31,7 @@ final class AppointmentController extends AbstractController
     {
         $result = [];
         foreach ($appointments as $appointment) {
-            $visitTime = $appointment->getVisitTime();
-            
+            $visitTime = $appointment->getVisitTime();            
             $duration = $appointment->getDurationMinutes() ?? 15;
             $cleaning = Appointment::CLEANING_TIME; 
             

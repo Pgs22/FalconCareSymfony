@@ -48,6 +48,7 @@ security:
         # temporal
         - { path: ^/api/patients, roles: PUBLIC_ACCESS, methods: [GET, POST] }
         - { path: ^/api/appointment, roles: PUBLIC_ACCESS, methods: [GET, POST] }
+        - { path: ^/api/treatments/patient, roles: PUBLIC_ACCESS }
         # temporal
         - { path: ^/api/docs, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }

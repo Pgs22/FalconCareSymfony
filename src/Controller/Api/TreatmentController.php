@@ -12,17 +12,26 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;   
 use Symfony\Component\HttpFoundation\Response;
-
+use App\Repository\AppointmentRepository;
 
 #[Route('/api/treatments')]
-final class Treatmentontroller extends AbstractController
+final class TreatmentController extends AbstractController
 {
-#[Route('/new', name: 'api_treatment_new', methods: ['POST'])]
-    public function create(Request $request, EntityManagerInterface $em, PathologyRepository $pathRepo): JsonResponse 
-    {
+    #[Route('/new', name: 'api_treatment_new', methods: ['POST'])]
+    public function new(
+        Request $request, 
+        EntityManagerInterface $em, 
+        PathologyRepository $pathRepo,
+        AppointmentRepository $appRepo
+    ): JsonResponse {
         $data = json_decode($request->getContent(), true);
+        if (!$data) {
+            return $this->json(['error' => 'Dades invàlides'], 400);
+        }
+
         $treatment = new Treatment();
-        $treatment->setTreatmentName($data['name'] ?? 'Nuevo Plan');
+        $treatment->setTreatmentName($data['name'] ?? 'Nou Pla de Tractament');
+        $treatment->setStatus('Actiu');
 
         if (!empty($data['pathology_ids'])) {
             foreach ($data['pathology_ids'] as $id) {
@@ -33,10 +42,22 @@ final class Treatmentontroller extends AbstractController
             }
         }
 
+        if (!empty($data['appointment_id'])) {
+            $appointment = $appRepo->find($data['appointment_id']);
+            if ($appointment) {
+                $appointment->setTreatment($treatment);
+                $em->persist($appointment);
+            }
+        }
+
         $em->persist($treatment);
         $em->flush();
 
-        return $this->json(['id' => $treatment->getId()]);
+        return $this->json([
+            'id' => $treatment->getId(),
+            'status' => 'success',
+            'message' => 'Tractament creat i vinculat a la cita'
+        ]);
     }
 
 
@@ -44,27 +65,32 @@ final class Treatmentontroller extends AbstractController
     public function getByPatient(
         int $id, 
         PatientRepository $patientRepo, 
-        TreatmentRepository $treatmentRepo
+        AppointmentRepository $appointmentRepo
     ): JsonResponse {
         $patient = $patientRepo->find($id);
         if (!$patient) {
             return $this->json(['error' => 'Pacient no trobat'], 404);
         }
 
-        $treatments = $treatmentRepo->findBy(['patient' => $patient]);
+        $appointments = $appointmentRepo->findBy(['patient' => $patient]);
         
         $data = [];
-        foreach ($treatments as $t) {
-            if ($t->getStatus() === 'Actiu') {
-                
-                $pathologiesCollection = $t->getPathologies(); 
-                $firstPathology = $pathologiesCollection->first() ?: null; 
+        $seenTreatments = [];
 
+        foreach ($appointments as $app) {
+            $t = $app->getTreatment();
+            
+            if ($t && strtolower(trim($t->getStatus())) === 'actiu' && !in_array($t->getId(), $seenTreatments)) {
+                
+                $seenTreatments[] = $t->getId();
+                $firstPathology = $t->getPathologies()->first() ?: null;
                 $pathologyType = $firstPathology ? $firstPathology->getPathologyType() : null;
+                $dbStatus = $t->getStatus();
 
                 $data[] = [
                     'treatmentId'       => $t->getId(),
-                    'treatmentName'     => $t->getTreatmentName(), 
+                    'treatmentName'     => $t->getTreatmentName(),
+                    'status_real'       => $dbStatus,
                     'pathologyId'       => $firstPathology ? $firstPathology->getId() : null,
                     'pathologyTypeName' => $pathologyType ? $pathologyType->getName() : 'Sense tipus',
                     'duration'          => $pathologyType ? $pathologyType->getDefaultDuration() : 30
