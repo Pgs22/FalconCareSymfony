@@ -19,9 +19,9 @@ class AppointmentRepository extends ServiceEntityRepository
     public function findByDate(\DateTimeInterface $date): array
     {
         return $this->createQueryBuilder('a')
-            ->andWhere('a.visit_date = :date')
+            ->andWhere('a.visitDate = :date') 
             ->setParameter('date', $date->format('Y-m-d'))
-            ->orderBy('a.visit_time', 'ASC')
+            ->orderBy('a.visitTime', 'ASC')
             ->getQuery()
             ->getResult();
     }    
@@ -50,15 +50,21 @@ class AppointmentRepository extends ServiceEntityRepository
             $start = new \DateTimeImmutable($startTime ?? 'now');
         }
 
-        // 1. Calculamos el fin incluyendo la limpieza de la NUEVA cita
         $totalDuration = $duration + Appointment::CLEANING_TIME;
         $endTime = $start->modify("+" . $totalDuration . " minutes");
 
+        $dateParam = ($date instanceof \DateTimeInterface) ? $date->format('Y-m-d') : $date;
+
         $qb = $this->createQueryBuilder('a')
             ->where('a.visitDate = :date')
-            ->andWhere('a.box = :boxId');
+            ->andWhere('a.box = :boxId')
+            ->setParameter('date', $dateParam)
+            ->setParameter('boxId', $boxId);
 
-        // ... (resto de la consulta igual) ...
+        if ($excludeId) {
+            $qb->andWhere('a.id != :excludeId')
+               ->setParameter('excludeId', $excludeId);
+        }
 
         $results = $qb->getQuery()->getResult();
 
@@ -68,7 +74,6 @@ class AppointmentRepository extends ServiceEntityRepository
 
             $exStart = \DateTimeImmutable::createFromInterface($exStartRaw);
             
-            // 2. IMPORTANTE: También sumamos la limpieza a las citas que ya están en la DB
             $exTotalDuration = $existing->getTotalDurationWithCleaning(); 
             $exEnd = $exStart->modify("+" . $exTotalDuration . " minutes");
             

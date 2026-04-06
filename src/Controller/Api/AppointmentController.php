@@ -31,15 +31,45 @@ final class AppointmentController extends AbstractController
     {
         $result = [];
         foreach ($appointments as $appointment) {
+            $visitTime = $appointment->getVisitTime();
+            
+            $duration = $appointment->getDurationMinutes() ?? 15;
+            $cleaning = Appointment::CLEANING_TIME; 
+            
+            $isUrgency = $appointment->isUrgency() ?? false;
+            $status = $appointment->getStatus() ?? 'Pendent';
+            
+            if ($status === 'Finalitzada') {
+                $color = '#9e9e9e';
+            } elseif ($isUrgency) {
+                $color = '#e74c3c';
+            } else {
+                $color = '#00bcd4';
+            }
+
             $result[] = [
                 'id' => $appointment->getId(),
-                'time' => $appointment->getVisitTime()->format('H:i'),
-                'duration' => $appointment->getDurationMinutes(),
-                'status' => $appointment->getStatus(),
-                'patientName' => $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName(),
-                'doctorName' => $appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames(),
-                'box' => $appointment->getBox()->getBoxName(),
-                'reason' => $appointment->getConsultationReason()
+                'time' => $visitTime ? $visitTime->format('H:i') : '--:--',
+                'duration' => $duration,
+                'cleaningTime' => $cleaning,
+                'totalBlockTime' => $duration + $cleaning,
+                
+                'patientName' => $appointment->getPatient() 
+                    ? $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName() 
+                    : 'Sense Pacient',
+                
+                'doctorName' => $appointment->getDoctor() 
+                    ? $appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames() 
+                    : 'Sense Doctor assignat',
+                
+                'boxName' => $appointment->getBox() ? $appointment->getBox()->getBoxName() : 'Sense Box',
+                
+                'color' => $color,
+                
+                'isUrgency' => $isUrgency,
+                'isFirstVisit' => $appointment->isFirstVisit() ?? false,
+                'reason' => $appointment->getConsultationReason() ?? '',
+                'status' => $status
             ];
         }
         return $result;
@@ -54,7 +84,24 @@ final class AppointmentController extends AbstractController
             $fecha = new \DateTime($fechaStr);
             $appointments = $repo->findByWeek($fecha);
         } catch (\Exception $e) {
-            return $this->json(['error' => 'Fecha no válida'], 400);
+            return $this->json(['error' => 'Data no vàlida'], 400);
+        }
+
+        return $this->json($this->serializeAppointments($appointments));
+    }
+
+    #[Route('/daily', name: 'app_appointment_daily', methods: ['GET'])]
+    public function daily(Request $request, AppointmentRepository $repo): JsonResponse 
+    {
+        $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
+        
+        try {
+            $fecha = new \DateTime($fechaStr);
+            
+            $appointments = $repo->findByDate($fecha);
+            
+        } catch (\Exception $e) {
+            return $this->json(['error' => 'Format de data no vàlid. Utilitza YYYY-MM-DD'], 400);
         }
 
         return $this->json($this->serializeAppointments($appointments));
@@ -62,26 +109,16 @@ final class AppointmentController extends AbstractController
 
     private function isBoxOccupied(AppointmentRepository $repository, Appointment $newApp): bool 
     {
-        $existingAppointments = $repository->findBy([
-            'visitDate' => $newApp->getVisitDate(),
-            'box' => $newApp->getBox()
-        ]);
+        // Solo le preguntamos al repo si hay citas que solapen
+        $overlaps = $repository->findOverlappingAppointments(
+            $newApp->getVisitDate(),
+            $newApp->getVisitTime(),
+            (int)($newApp->getDurationMinutes() ?? 15),
+            $newApp->getBox()->getId(),
+            $newApp->getId()
+        );
 
-        $newStart = $newApp->getVisitTime();
-        $newEnd = (clone $newStart)->modify("+{$newApp->getDurationMinutes()} minutes");
-
-        foreach ($existingAppointments as $existing) {
-            if ($existing->getId() === $newApp->getId()) continue;
-
-            $exStart = $existing->getVisitTime();
-            $exEnd = (clone $exStart)->modify("+{$existing->getDurationMinutes()} minutes");
-
-            if ($newStart < $exEnd && $newEnd > $exStart) {
-                return true;
-            }
-        }
-
-        return false;
+        return count($overlaps) > 0;
     }
 
     #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
@@ -203,7 +240,6 @@ final class AppointmentController extends AbstractController
 
         if ($form->isSubmitted() && $form->isValid()) {
             
-            // Validar si el nuevo horario/box está libre (excluyendo esta misma cita)
             if ($this->isBoxOccupied($repository, $appointment)) {
                 return $this->json(['error' => 'No es pot moure la cita: el Box ja està ocupat'], 409);
             }

@@ -178,10 +178,8 @@ class Appointment
     {
         $this->treatment = $treatment;
         
-        // Solo si hay tratamiento y tiene al menos una patología
         if ($treatment && $treatment->getPathologies()->count() > 0) {
             $pathology = $treatment->getPathologies()->first();
-            // Accedemos con seguridad a la duración por defecto
             $this->durationMinutes = $pathology->getPathologyType()->getDefaultDuration();
         }
         

@@ -8,6 +8,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
+use Doctrine\ORM\EntityManagerInterface;
 
 #[Route('/api/appointment')]
 final class DoctorController extends AbstractController
@@ -17,7 +18,8 @@ final class DoctorController extends AbstractController
     public function getSetup(
         Request $request,
         DoctorRepository $docRepo, 
-        BoxRepository $boxRepo
+        BoxRepository $boxRepo,
+        EntityManagerInterface $em
     ): JsonResponse {
         
         $dateStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
@@ -61,6 +63,7 @@ final class DoctorController extends AbstractController
         return $this->json([
             'doctors' => $availableDoctors,
             'boxes' => $boxesData,
+            'pathologies' => $this->getPathologiesData($em),
             'dayDetected' => $diaDeLaCita
         ]);
     }
@@ -79,5 +82,19 @@ final class DoctorController extends AbstractController
         }, $doctors);
 
         return $this->json($data);
+    }
+
+    private function getPathologiesData(EntityManagerInterface $em): array
+    {
+        $pathologyRepo = $em->getRepository(\App\Entity\PathologyType::class);
+        $allPathologies = $pathologyRepo->findAll();
+
+        return array_map(function($p) {
+            return [
+                'id' => $p->getId(),
+                'name' => $p->getName(),
+                'duration' => $p->getDefaultDuration()
+            ];
+        }, $allPathologies);
     }
 }
