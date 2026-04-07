@@ -129,41 +129,63 @@ final class AppointmentController extends AbstractController
         $appointment = new Appointment();
         $data = json_decode($request->getContent(), true);
 
-        $form = $this->createForm(AppointmentType::class, $appointment);
-        $form->submit($data); 
-
-        if ($form->isSubmitted() && $form->isValid()) {
-
-            if (!empty($data['isFirstVisit'])) {
-                $appointment->setFirstVisit(true);
-            }
-            if (!empty($data['isUrgency'])) {
-                $appointment->setUrgency(true);
-            }
-
-            if (isset($data['durationMinutes'])) {
-                $appointment->setDurationMinutes((int)$data['durationMinutes']);
-            }
-
-            if ($appointment->getDurationMinutes() === null) {
-                $appointment->setDurationMinutes(15);
-            }
-
-            if ($this->isBoxOccupied($repository, $appointment)) {
-                return $this->json(['error' => 'El Box està ocupat en aquesta franja horària'], Response::HTTP_CONFLICT);
-            }
-
-            $entityManager->persist($appointment);
-            $entityManager->flush();
-
-            return $this->json([
-                'id' => $appointment->getId(),
-                'duration' => $appointment->getDurationMinutes(),
-                'message' => 'Cita creada amb èxit'
-            ], Response::HTTP_CREATED);
+        if (!$data) {
+            return $this->json(['errors' => 'JSON mal format o buit'], Response::HTTP_BAD_REQUEST);
         }
 
-        return $this->json(['errors' => 'Dades invàlides'], Response::HTTP_BAD_REQUEST);
+        $form = $this->createForm(AppointmentType::class, $appointment);
+        $form->submit($data, false); 
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            try {
+                if (!$appointment->getStatus()) {
+                    $appointment->setStatus('Programada'); 
+                }
+
+                if ($appointment->getObservations() === null) {
+                    $appointment->setObservations(''); 
+                }
+
+                if (!$appointment->getConsultationReason()) {
+                    $appointment->setConsultationReason('Consulta general');
+                }
+
+                if (isset($data['durationMinutes'])) {
+                    $appointment->setDurationMinutes((int)$data['durationMinutes']);
+                }
+
+                if ($this->isBoxOccupied($repository, $appointment)) {
+                    return $this->json(['error' => 'Box ocupat'], Response::HTTP_CONFLICT);
+                }
+
+                $entityManager->persist($appointment);
+                $entityManager->flush(); 
+
+                return $this->json([
+                    'id' => $appointment->getId(),
+                    'message' => 'Cita creada amb èxit'
+                ], Response::HTTP_CREATED);
+
+            } catch (\Exception $e) {
+                return $this->json([
+                    'errors' => 'Error de base de dades',
+                    'debug' => $e->getMessage()
+                ], 500);
+            }
+        }
+
+        $errors = [];
+        foreach ($form->getErrors(true, true) as $error) {
+            $origin = $error->getOrigin();
+            $fieldName = $origin ? $origin->getName() : 'form';
+            $errors[] = $fieldName . ': ' . $error->getMessage();
+        }
+
+        return $this->json([
+            'errors' => 'Dades invàlides',
+            'debug' => $errors,
+            'received' => $data
+        ], Response::HTTP_BAD_REQUEST);
     }
 
     #[Route('/{id}/open', name: 'app_appointment_open', requirements: ['id' => '\d+'], methods: ['GET'])]
@@ -196,22 +218,22 @@ final class AppointmentController extends AbstractController
     {
         return $this->json([
             'id' => $appointment->getId(),
-            'date' => $appointment->getVisitDate()->format('Y-m-d'),
-            'time' => $appointment->getVisitTime()->format('H:i'),
-            'reason' => $appointment->getConsultationReason(),
-            'observations' => $appointment->getObservations(),
-            'status' => $appointment->getStatus(),
+            'date' => $appointment->getVisitDate() ? $appointment->getVisitDate()->format('Y-m-d') : null,
+            'time' => $appointment->getVisitTime() ? $appointment->getVisitTime()->format('H:i') : null,
+            'reason' => $appointment->getConsultationReason() ?? '',
+            'observations' => $appointment->getObservations() ?? '',
+            'status' => $appointment->getStatus() ?? 'Programada',
             'duration' => $appointment->getDurationMinutes(),
             'patient' => [
-                'id' => $appointment->getPatient()->getId(),
-                'name' => $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName(),
+                'id' => $appointment->getPatient()?->getId(),
+                'name' => $appointment->getPatient() ? ($appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName()) : 'Pacient desconegut',
             ],
             'doctor' => [
-                'id' => $appointment->getDoctor()->getId(),
-                'name' => $appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames(),
+                'id' => $appointment->getDoctor()?->getId(),
+                'name' => $appointment->getDoctor() ? ($appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames()) : 'Sense doctor',
             ],
-            'box' => $appointment->getBox()->getBoxName(),
-            'treatmentId' => $appointment->getTreatment() ? $appointment->getTreatment()->getId() : null,
+            'box' => $appointment->getBox()?->getBoxName() ?? 'Sense box',
+            'treatmentId' => $appointment->getTreatment()?->getId(),
         ]);
     }
 
@@ -234,22 +256,25 @@ final class AppointmentController extends AbstractController
         $data = json_decode($request->getContent(), true);
         if (!$data) return $this->json(['error' => 'JSON invàlid'], 400);
 
-        $form = $this->createForm(AppointmentType::class, $appointment, ['csrf_protection' => false]);
+        $form = $this->createForm(AppointmentType::class, $appointment);
         $form->submit($data, false);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            
-            if ($this->isBoxOccupied($repository, $appointment)) {
-                return $this->json(['error' => 'No es pot moure la cita: el Box ja està ocupat'], 409);
-            }
+            try {
+                if ($this->isBoxOccupied($repository, $appointment)) {
+                    return $this->json(['error' => 'No es pot moure la cita: el Box ja està ocupat'], 409);
+                }
 
-            $entityManager->flush();
-            return $this->json([
-                'status' => 'updated',
-                'id' => $appointment->getId(),
-                'duration' => $appointment->getDurationMinutes(),
-                'message' => 'Cita actualitzada'
-            ]);
+                $entityManager->flush();
+                
+                return $this->json([
+                    'status' => 'updated',
+                    'id' => $appointment->getId(),
+                    'message' => 'Cita actualitzada'
+                ]);
+            } catch (\Exception $e) {
+                return $this->json(['error' => 'Error de base de dades', 'debug' => $e->getMessage()], 500);
+            }
         }
         return $this->json(['error' => 'Error de validació'], 400);
     }
