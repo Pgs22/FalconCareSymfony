@@ -28,47 +28,44 @@ final class AppointmentController extends AbstractController
     }
 
     private function serializeAppointments(array $appointments): array
-    {
+        {
         $result = [];
         foreach ($appointments as $appointment) {
-            $visitTime = $appointment->getVisitTime();            
-            $duration = $appointment->getDurationMinutes() ?? 15;
-            $cleaning = Appointment::CLEANING_TIME; 
-            
-            $isUrgency = $appointment->isUrgency() ?? false;
+            $reason = $appointment->getConsultationReason() ?? '';
             $status = $appointment->getStatus() ?? 'Pendent';
             
+            $isUrgency = $appointment->isUrgency() || str_contains(strtolower($reason), 'urgència') || str_contains(strtolower($reason), 'urgencia');
+            $isFirstVisit = $appointment->isFirstVisit() || str_contains(strtolower($reason), 'primera visita');
+
             if ($status === 'Finalitzada') {
                 $color = '#9e9e9e';
             } elseif ($isUrgency) {
-                $color = '#e74c3c';
+                $color = '#e91e63';
+            } elseif ($isFirstVisit) {
+                $color = '#9c27b0';
             } else {
                 $color = '#00bcd4';
             }
 
             $result[] = [
                 'id' => $appointment->getId(),
-                'time' => $visitTime ? $visitTime->format('H:i') : '--:--',
-                'duration' => $duration,
-                'cleaningTime' => $cleaning,
-                'totalBlockTime' => $duration + $cleaning,
-                
+                'time' => $appointment->getVisitTime() ? $appointment->getVisitTime()->format('H:i') : '--:--',
+                'duration' => $appointment->getDurationMinutes() ?? 30,
+                'cleaningTime' => 5,
+                'totalBlockTime' => ($appointment->getDurationMinutes() ?? 30) + 5,
                 'patientName' => $appointment->getPatient() 
                     ? $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName() 
                     : 'Sense Pacient',
-                
                 'doctorName' => $appointment->getDoctor() 
-                    ? $appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames() 
-                    : 'Sense Doctor assignat',
-                
-                'boxName' => $appointment->getBox() ? $appointment->getBox()->getBoxName() : 'Sense Box',
-                
+                    ? $appointment->getDoctor()->getFirstName() 
+                    : 'Sense Doctor',
+                'boxId' => $appointment->getBox() ? $appointment->getBox()->getId() : null,
+                'box' => $appointment->getBox() ? $appointment->getBox()->getBoxName() : 'Sense Box',
+                'reason' => $reason,
+                'status' => $status,
                 'color' => $color,
-                
                 'isUrgency' => $isUrgency,
-                'isFirstVisit' => $appointment->isFirstVisit() ?? false,
-                'reason' => $appointment->getConsultationReason() ?? '',
-                'status' => $status
+                'isFirstVisit' => $isFirstVisit
             ];
         }
         return $result;
@@ -78,7 +75,6 @@ final class AppointmentController extends AbstractController
     public function weekly(Request $request, AppointmentRepository $repo): JsonResponse 
     {
         $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
-        
         try {
             $fecha = new \DateTime($fechaStr);
             $appointments = $repo->findByWeek($fecha);
@@ -89,34 +85,15 @@ final class AppointmentController extends AbstractController
         return $this->json($this->serializeAppointments($appointments));
     }
 
-    #[Route('/daily', name: 'app_appointment_daily', methods: ['GET'])]
-    public function daily(Request $request, AppointmentRepository $repo): JsonResponse 
-    {
-        $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
-        
-        try {
-            $fecha = new \DateTime($fechaStr);
-            
-            $appointments = $repo->findByDate($fecha);
-            
-        } catch (\Exception $e) {
-            return $this->json(['error' => 'Format de data no vàlid. Utilitza YYYY-MM-DD'], 400);
-        }
-
-        return $this->json($this->serializeAppointments($appointments));
-    }
-
     private function isBoxOccupied(AppointmentRepository $repository, Appointment $newApp): bool 
     {
-        // Solo le preguntamos al repo si hay citas que solapen
         $overlaps = $repository->findOverlappingAppointments(
             $newApp->getVisitDate(),
             $newApp->getVisitTime(),
             (int)($newApp->getDurationMinutes() ?? 15),
-            $newApp->getBox()->getId(),
+            $newApp->getBox()?->getId(),
             $newApp->getId()
         );
-
         return count($overlaps) > 0;
     }
 
@@ -199,7 +176,7 @@ final class AppointmentController extends AbstractController
         if (!$odontogramId) {
             $newOdontogram = new Odontogram();
             $newOdontogram->setVisit($appointment);
-            $newOdontogram->setStatus('Abierto');
+            $newOdontogram->setStatus('Actiu');
 
             $entityManager->persist($newOdontogram);
             $entityManager->flush();
@@ -237,13 +214,12 @@ final class AppointmentController extends AbstractController
         ]);
     }
 
-    #[Route('/{id}/close', name: 'app_appointment_close', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[Route('/{id}/close', name: 'app_appointment_close', methods: ['POST'])]
     public function close(Appointment $appointment, EntityManagerInterface $em): JsonResponse 
     {
         $appointment->setStatus('Finalitzada');
         $em->flush();
-
-        return $this->json(['message' => 'Cita tancada']);
+        return $this->json(['message' => 'Cita finalitzada']);
     }
 
     #[Route('/{id}/update', name: 'app_appointment_update', requirements: ['id' => '\d+'], methods: ['POST', 'PUT'])]
