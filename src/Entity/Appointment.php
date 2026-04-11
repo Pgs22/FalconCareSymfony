@@ -227,6 +227,11 @@ class Appointment
         return $this;
     }
 
+    private $isFirstVisit = false;
+    public function isFirstVisit(): bool {
+        return $this->isFirstVisit || $this->consultationReason === 'Primera Visita';
+    }
+    
     public function setFirstVisit(bool $isFirstVisit): self
     {
         if ($isFirstVisit) {
@@ -238,6 +243,13 @@ class Appointment
         return $this;
     }
 
+    private $isUrgency = false; 
+
+    public function isUrgency(): bool {
+
+        return $this->isUrgency;
+
+    }
     public function setUrgency(bool $isUrgency): self
     {
         if ($isUrgency) {
