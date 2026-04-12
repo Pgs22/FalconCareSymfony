@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 
 #[Route('/api/treatments')]
-final class Treatmentontroller extends AbstractController
+final class TreatmentController extends AbstractController
 {
     /**
      * Crea un tratamiento y le asigna patologías existentes.

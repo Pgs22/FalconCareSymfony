@@ -14,6 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
+/**
+ * Rutas bajo /api/appointment (calendario, CRUD de cita).
+ * Para historial por paciente con filtros tipo API Platform, usar GET {@see \App\Controller\Api\AppointmentsApiController} `/api/appointments`.
+ */
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
