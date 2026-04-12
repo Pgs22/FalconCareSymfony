@@ -38,6 +38,19 @@ class DocumentRepository extends ServiceEntityRepository
     }
 
     /**
+     * @return list<Document>
+     */
+    public function findByPatientOrdered(Patient $patient): array
+    {
+        return $this->createQueryBuilder('d')
+            ->andWhere('d.patient = :patient')
+            ->setParameter('patient', $patient)
+            ->orderBy('d.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Summary of findByCaptureDate
      * Searches documents by capture date using pagination to optimize performance.
      * 1. Defines the 24-hour time range (from 00:00:00 to 00:00:00 the next day)
@@ -48,15 +61,17 @@ class DocumentRepository extends ServiceEntityRepository
      * @param int $limit
      * @return Paginator<Document>
      */
-    public function findByCaptureDate(\DateTime $date, int $page = 1, int $limit = 10): Paginator
+    public function findByCaptureDate(Patient $patient, \DateTime $date, int $page = 1, int $limit = 10): Paginator
     {
         $date->setTime(0, 0, 0);
         $nextDay = clone $date;
         $nextDay->modify('+1 day');
 
         $query = $this->createQueryBuilder('d')
+            ->andWhere('d.patient = :patient')
             ->andWhere('d.captureDate >= :date')
             ->andWhere('d.captureDate < :nextDay')
+            ->setParameter('patient', $patient)
             ->setParameter('date', $date)
             ->setParameter('nextDay', $nextDay)
             ->orderBy('d.captureDate', 'DESC')
@@ -70,13 +85,17 @@ class DocumentRepository extends ServiceEntityRepository
 
     // --- WRITE OPERATIONS [cite: 12-02-2026] ---
 
-    public function create(string $filename, array $data, Patient $patient): Document
+    /**
+     * @param array{type?: string, description?: string|null} $data
+     */
+    public function create(string $filename, array $data, Patient $patient, ?string $originalName = null): Document
     {
         $document = new Document();
         $document->setFilePath($filename);
-        $document->setType($data['type'] ?? '');
+        $document->setType($data['type'] ?? 'application/octet-stream');
         $document->setCaptureDate(new \DateTimeImmutable());
         $document->setDescription($data['description'] ?? null);
+        $document->setOriginalName($originalName);
         $document->setPatient($patient);
 
         $em = $this->getEntityManager();

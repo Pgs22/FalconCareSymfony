@@ -5,7 +5,6 @@ namespace App\Entity;
 use App\Repository\DocumentRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
-use Symfony\Component\Serializer\Attribute\Groups;
 
 #[ORM\Entity(repositoryClass: DocumentRepository::class)]
 #[ORM\Table(name: 'document')]
@@ -15,27 +14,26 @@ class Document
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
-    #[Groups(['document:read'])]
     private ?int $id = null;
 
-    #[ORM\Column(length: 50)]
-    #[Groups(['document:read'])]
+    /** MIME almacenado (p. ej. application/pdf) o application/octet-stream */
+    #[ORM\Column(length: 255)]
     private ?string $type = null;
 
     #[ORM\Column(length: 255)]
-    #[Groups(['document:read'])]
     private ?string $filePath = null;
 
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $originalName = null;
+
     #[ORM\Column]
-    #[Groups(['document:read'])]
     private ?\DateTimeImmutable $captureDate = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
-    #[Groups(['document:read'])]
     private ?string $description = null;
 
     #[ORM\ManyToOne(targetEntity: Patient::class, inversedBy: 'documents')]
-    #[ORM\JoinColumn(nullable: true)]
+    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     private ?Patient $patient = null;
 
     public function getId(): ?int
@@ -63,6 +61,18 @@ class Document
     public function setFilePath(string $filePath): static
     {
         $this->filePath = $filePath;
+
+        return $this;
+    }
+
+    public function getOriginalName(): ?string
+    {
+        return $this->originalName;
+    }
+
+    public function setOriginalName(?string $originalName): static
+    {
+        $this->originalName = $originalName;
 
         return $this;
     }
