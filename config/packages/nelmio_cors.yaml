@@ -2,9 +2,13 @@ nelmio_cors:
     defaults:
         origin_regex: true
         allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
+        allow_credentials: true
         allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']
-        allow_headers: ['Content-Type', 'Authorization']
-        expose_headers: ['Link']
+        allow_headers: ['Content-Type', 'Authorization', 'Accept']
+        expose_headers: ['Link', 'Content-Disposition', 'Content-Type']
         max_age: 3600
+        # Chrome: preflight from http://localhost:* to http://127.0.0.1:* sends
+        # Access-Control-Request-Private-Network; without this, the preflight returns 400.
+        allow_private_network: true
     paths:
         '^/': null
