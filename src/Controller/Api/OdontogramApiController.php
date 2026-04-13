@@ -2,14 +2,18 @@
 
 namespace App\Controller\Api;
 
+use App\Entity\Appointment;
 use App\Entity\Odontogram;
 use App\Entity\OdontogramDetail;
+use App\Entity\Patient;
+use App\Entity\Pathology;
 use App\Entity\ToothFace;
+use App\Entity\Treatment;
 use App\Repository\AppointmentRepository;
-use App\Repository\OdontogramRepository;
 use App\Repository\OdontogramDetailRepository;
+use App\Repository\OdontogramRepository;
 use App\Repository\PathologyRepository;
-use App\Repository\TreatmentRepository;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -20,84 +24,234 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/api/odontograms')]
 final class OdontogramApiController extends AbstractController
 {
+    private const STATUS_OPEN = 'Abierto';
+
     public function __construct(
         private readonly AppointmentRepository $appointmentRepository,
         private readonly OdontogramRepository $odontogramRepository,
         private readonly OdontogramDetailRepository $odontogramDetailRepository,
-        private readonly TreatmentRepository $treatmentRepository,
         private readonly PathologyRepository $pathologyRepository,
         private readonly EntityManagerInterface $entityManager,
     ) {
     }
 
-    #[Route('', name: 'api_odontogram_create', methods: ['POST'])]
-    public function create(Request $request): JsonResponse
+    #[Route('/open', name: 'api_odontogram_create_or_get', methods: ['POST'])]
+    public function createOrGetOdontogram(Request $request): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
-
-        if (!is_array($data)) {
-            return $this->json([
-                'error' => 'Invalid JSON body'
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
+        $data = $this->getRequestData($request);
+        $patientId = $data['patient_id'] ?? null;
         $visitId = $data['visit_id'] ?? null;
-        $treatmentId = $data['treatment_id'] ?? null;
 
-        if (!$visitId || !$treatmentId) {
+        if (!$this->isPositiveInt($patientId) || !$this->isPositiveInt($visitId)) {
             return $this->json([
-                'error' => 'visit_id and treatment_id are required'
+                'error' => 'patient_id and visit_id are required',
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        $appointment = $this->appointmentRepository->find($visitId);
-        if (!$appointment) {
+        $patient = $this->entityManager->find(Patient::class, (int) $patientId);
+        if (!$patient instanceof Patient) {
             return $this->json([
-                'error' => 'Appointment not found'
+                'error' => 'Patient not found',
             ], Response::HTTP_NOT_FOUND);
         }
 
-        $treatment = $this->treatmentRepository->find($treatmentId);
-        if (!$treatment) {
+        $visit = $this->appointmentRepository->find((int) $visitId);
+        if (!$visit instanceof Appointment) {
             return $this->json([
-                'error' => 'Treatment not found'
+                'error' => 'Appointment not found',
             ], Response::HTTP_NOT_FOUND);
         }
 
-        $existingOdontogram = $this->odontogramRepository->findOneBy([
-            'visit' => $appointment,
-            'treatment' => $treatment,
-        ]);
-
-        if ($existingOdontogram) {
+        if ($visit->getPatient()?->getId() !== $patient->getId()) {
             return $this->json([
-                'message' => 'Odontogram already exists for this visit and treatment',
-                'id' => $existingOdontogram->getId(),
-                'status' => $existingOdontogram->getStatus(),
-                'visit_id' => $appointment->getId(),
-                'treatment_id' => $treatment->getId(),
-            ], Response::HTTP_OK);
+                'error' => 'The appointment does not belong to the provided patient',
+            ], Response::HTTP_CONFLICT);
         }
 
-        $odontogram = new Odontogram();
-        $odontogram->setVisit($appointment);
-        $odontogram->setTreatment($treatment);
-        $odontogram->setStatus('Pendiente');
+        $created = false;
 
-        $this->entityManager->persist($odontogram);
-        $this->entityManager->flush();
+        try {
+            $this->beginTransaction();
 
-        if (method_exists($treatment, 'setLastOdontogramId')) {
-            $treatment->setLastOdontogramId($odontogram->getId());
+            $odontogram = $this->findReusableOpenOdontogram($patient);
+
+            if (!$odontogram instanceof Odontogram) {
+                $odontogram = new Odontogram();
+                $odontogram->setStatus(self::STATUS_OPEN);
+                $odontogram->setVisit($visit);
+                $this->entityManager->persist($odontogram);
+                $this->entityManager->flush();
+                $created = true;
+            } else {
+                $odontogram->setVisit($visit);
+            }
+
+            $patient->setLastOdontogramId($odontogram->getId());
+
             $this->entityManager->flush();
+            $this->commit();
+        } catch (\Throwable $e) {
+            $this->rollBack();
+
+            return $this->json([
+                'error' => 'Could not create or recover the odontogram',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         return $this->json([
-            'message' => 'Odontogram created successfully',
-            'id' => $odontogram->getId(),
-            'status' => $odontogram->getStatus(),
-            'visit_id' => $appointment->getId(),
-            'treatment_id' => $treatment->getId(),
+            'message' => $created ? 'Odontogram created successfully' : 'Open odontogram reused successfully',
+            'odontogram' => $this->serializeOdontogram($odontogram),
+        ], $created ? Response::HTTP_CREATED : Response::HTTP_OK);
+    }
+
+    #[Route('/{odontogramId}/pathologies', name: 'api_odontogram_add_pathology_to_tooth', requirements: ['odontogramId' => '\d+'], methods: ['POST'])]
+    public function addPathologyToTooth(int $odontogramId, Request $request): JsonResponse
+    {
+        $odontogram = $this->odontogramRepository->find($odontogramId);
+        if (!$odontogram instanceof Odontogram) {
+            return $this->json([
+                'error' => 'Odontogram not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = $this->getRequestData($request);
+        $pathologyId = $data['pathology_id'] ?? null;
+        $toothNumber = $data['tooth_number'] ?? null;
+        $faces = $data['faces'] ?? [];
+
+        if (!$this->isPositiveInt($pathologyId) || !$this->isPositiveInt($toothNumber)) {
+            return $this->json([
+                'error' => 'pathology_id and tooth_number are required',
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        if (!is_array($faces)) {
+            return $this->json([
+                'error' => 'faces must be an array',
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        $pathology = $this->pathologyRepository->find((int) $pathologyId);
+        if (!$pathology instanceof Pathology) {
+            return $this->json([
+                'error' => 'Pathology not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $cleanFaces = $this->normalizeFaces($faces);
+
+        try {
+            $this->beginTransaction();
+
+            $detail = new OdontogramDetail();
+            $detail->setOdontogram($odontogram);
+            $detail->setPathology($pathology);
+            $detail->setToothNumber((int) $toothNumber);
+            $this->entityManager->persist($detail);
+            $this->entityManager->flush();
+
+            foreach ($cleanFaces as $faceName) {
+                $face = new ToothFace();
+                $face->setFaceName($faceName);
+                $face->setOdontogramDetail($detail);
+                $this->entityManager->persist($face);
+            }
+
+            $this->entityManager->flush();
+            $this->commit();
+        } catch (\Throwable $e) {
+            $this->rollBack();
+
+            return $this->json([
+                'error' => 'Could not create the odontogram detail',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        return $this->json([
+            'message' => 'Pathology added to tooth successfully',
+            'detail' => $this->serializeDetail($detail),
+        ], Response::HTTP_CREATED);
+    }
+
+    #[Route('/{odontogramId}/treatments/sync', name: 'api_odontogram_create_treatment_and_sync_visit', requirements: ['odontogramId' => '\d+'], methods: ['POST'])]
+    public function createTreatmentAndSyncVisit(int $odontogramId, Request $request): JsonResponse
+    {
+        $odontogram = $this->odontogramRepository->find($odontogramId);
+        if (!$odontogram instanceof Odontogram) {
+            return $this->json([
+                'error' => 'Odontogram not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = $this->getRequestData($request);
+        $visitId = $data['visit_id'] ?? null;
+
+        if (!$this->isPositiveInt($visitId)) {
+            return $this->json([
+                'error' => 'visit_id is required',
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        $visit = $this->appointmentRepository->find((int) $visitId);
+        if (!$visit instanceof Appointment) {
+            return $this->json([
+                'error' => 'Appointment not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $odontogramPatientId = $odontogram->getVisit()?->getPatient()?->getId();
+        $visitPatientId = $visit->getPatient()?->getId();
+
+        if ($odontogramPatientId !== null && $visitPatientId !== $odontogramPatientId) {
+            return $this->json([
+                'error' => 'The appointment does not belong to the odontogram patient',
+            ], Response::HTTP_CONFLICT);
+        }
+
+        try {
+            $this->beginTransaction();
+
+            $treatment = new Treatment();
+            $treatment->setTreatmentName($this->resolveTreatmentName($data));
+            $treatment->setDescription($this->resolveTreatmentDescription($data));
+
+            if ($this->isPositiveInt($data['estimated_duration'] ?? null)) {
+                $treatment->setEstimatedDuration((int) $data['estimated_duration']);
+            }
+
+            if (isset($data['status']) && is_string($data['status']) && trim($data['status']) !== '') {
+                $treatment->setStatus(trim($data['status']));
+            }
+
+            if (array_key_exists('scheduling_notes', $data) && ($data['scheduling_notes'] === null || is_string($data['scheduling_notes']))) {
+                $notes = $data['scheduling_notes'];
+                $treatment->setSchedulingNotes($notes !== null ? trim($notes) : null);
+            }
+
+            $this->entityManager->persist($treatment);
+            $this->entityManager->flush();
+
+            $odontogram->setTreatment($treatment);
+            $odontogram->setVisit($visit);
+            $visit->setTreatment($treatment);
+
+            $this->entityManager->flush();
+            $this->commit();
+        } catch (\Throwable $e) {
+            $this->rollBack();
+
+            return $this->json([
+                'error' => 'Could not create the treatment and sync the visit',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        return $this->json([
+            'message' => 'Treatment created and visit synchronized successfully',
+            'treatment' => $this->serializeTreatment($treatment),
+            'odontogram' => $this->serializeOdontogram($odontogram),
         ], Response::HTTP_CREATED);
     }
 
@@ -106,142 +260,22 @@ final class OdontogramApiController extends AbstractController
     {
         $odontogram = $this->odontogramRepository->find($id);
 
-        if (!$odontogram) {
+        if (!$odontogram instanceof Odontogram) {
             return $this->json([
-                'message' => 'Odontogram not found'
+                'message' => 'Odontogram not found',
             ], Response::HTTP_NOT_FOUND);
         }
 
         return $this->json($this->serializeOdontogram($odontogram), Response::HTTP_OK);
     }
 
-    #[Route('/by-visit/{visitId}/treatment/{treatmentId}', name: 'api_odontogram_by_visit_and_treatment', requirements: ['visitId' => '\d+', 'treatmentId' => '\d+'], methods: ['GET'])]
-    public function findByVisitAndTreatment(int $visitId, int $treatmentId): JsonResponse
-    {
-        $appointment = $this->appointmentRepository->find($visitId);
-        if (!$appointment) {
-            return $this->json([
-                'message' => 'Appointment not found'
-            ], Response::HTTP_NOT_FOUND);
-        }
-
-        $treatment = $this->treatmentRepository->find($treatmentId);
-        if (!$treatment) {
-            return $this->json([
-                'message' => 'Treatment not found'
-            ], Response::HTTP_NOT_FOUND);
-        }
-
-        $odontogram = $this->odontogramRepository->findOneBy([
-            'visit' => $appointment,
-            'treatment' => $treatment,
-        ]);
-
-        if (!$odontogram) {
-            return $this->json([
-                'message' => 'Odontogram not found'
-            ], Response::HTTP_NOT_FOUND);
-        }
-
-        return $this->json([
-            'id' => $odontogram->getId(),
-            'status' => $odontogram->getStatus(),
-            'visit_id' => $appointment->getId(),
-            'treatment_id' => $treatment->getId(),
-        ], Response::HTTP_OK);
-    }
-
-    #[Route('/{odontogramId}/details', name: 'api_odontogram_detail_create', requirements: ['odontogramId' => '\d+'], methods: ['POST'])]
-    public function createDetail(int $odontogramId, Request $request): JsonResponse
-    {
-        $odontogram = $this->odontogramRepository->find($odontogramId);
-        if (!$odontogram) {
-            return $this->json([
-                'error' => 'Odontogram not found'
-            ], Response::HTTP_NOT_FOUND);
-        }
-
-        $data = json_decode($request->getContent(), true);
-
-        if (!is_array($data)) {
-            return $this->json([
-                'error' => 'Invalid JSON body'
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        $toothNumber = $data['tooth_number'] ?? null;
-        $pathologyId = $data['pathology_id'] ?? null;
-        $faces = $data['faces'] ?? [];
-
-        if ($toothNumber === null || $pathologyId === null) {
-            return $this->json([
-                'error' => 'tooth_number and pathology_id are required'
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        if (!is_array($faces)) {
-            return $this->json([
-                'error' => 'faces must be an array'
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        $pathology = $this->pathologyRepository->find($pathologyId);
-        if (!$pathology) {
-            return $this->json([
-                'error' => 'Pathology not found'
-            ], Response::HTTP_NOT_FOUND);
-        }
-
-        $detail = new OdontogramDetail();
-        $detail->setOdontogram($odontogram);
-        $detail->setToothNumber((int) $toothNumber);
-        $detail->setPathology($pathology);
-
-        $this->entityManager->persist($detail);
-
-        $cleanFaces = [];
-        foreach ($faces as $faceName) {
-            if (!is_string($faceName)) {
-                continue;
-            }
-
-            $faceName = trim($faceName);
-
-            if ($faceName === '') {
-                continue;
-            }
-
-            if (in_array($faceName, $cleanFaces, true)) {
-                continue;
-            }
-
-            $cleanFaces[] = $faceName;
-
-            $face = new ToothFace();
-            $face->setFaceName($faceName);
-            $face->setOdontogramDetail($detail);
-            $this->entityManager->persist($face);
-        }
-
-        $this->entityManager->flush();
-
-        return $this->json([
-            'message' => 'Odontogram detail created successfully',
-            'id' => $detail->getId(),
-            'odontogram_id' => $odontogram->getId(),
-            'tooth_number' => $detail->getToothNumber(),
-            'pathology_id' => $pathology->getId(),
-            'faces' => $cleanFaces,
-        ], Response::HTTP_CREATED);
-    }
-
     #[Route('/{odontogramId}/details', name: 'api_odontogram_detail_list', requirements: ['odontogramId' => '\d+'], methods: ['GET'])]
     public function listDetails(int $odontogramId): JsonResponse
     {
         $odontogram = $this->odontogramRepository->find($odontogramId);
-        if (!$odontogram) {
+        if (!$odontogram instanceof Odontogram) {
             return $this->json([
-                'message' => 'Odontogram not found'
+                'message' => 'Odontogram not found',
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -258,18 +292,30 @@ final class OdontogramApiController extends AbstractController
     {
         $detail = $this->odontogramDetailRepository->find($detailId);
 
-        if (!$detail) {
+        if (!$detail instanceof OdontogramDetail) {
             return $this->json([
-                'error' => 'Odontogram detail not found'
+                'error' => 'Odontogram detail not found',
             ], Response::HTTP_NOT_FOUND);
         }
 
-        foreach ($detail->getToothFaces() as $face) {
-            $this->entityManager->remove($face);
-        }
+        try {
+            $this->beginTransaction();
 
-        $this->entityManager->remove($detail);
-        $this->entityManager->flush();
+            foreach ($detail->getToothFaces() as $face) {
+                $this->entityManager->remove($face);
+            }
+
+            $this->entityManager->remove($detail);
+            $this->entityManager->flush();
+            $this->commit();
+        } catch (\Throwable $e) {
+            $this->rollBack();
+
+            return $this->json([
+                'error' => 'Could not delete the odontogram detail',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
 
         return $this->json([
             'result' => 'deleted',
@@ -277,78 +323,130 @@ final class OdontogramApiController extends AbstractController
         ], Response::HTTP_OK);
     }
 
-    #[Route('/details/{detailId}/faces', name: 'api_tooth_face_create', requirements: ['detailId' => '\d+'], methods: ['POST'])]
-    public function createFace(int $detailId, Request $request): JsonResponse
+    private function findReusableOpenOdontogram(Patient $patient): ?Odontogram
     {
-        $detail = $this->odontogramDetailRepository->find($detailId);
+        $lastOdontogramId = $patient->getLastOdontogramId();
+        if ($lastOdontogramId !== null) {
+            $lastOdontogram = $this->odontogramRepository->find($lastOdontogramId);
 
-        if (!$detail) {
-            return $this->json([
-                'error' => 'Odontogram detail not found'
-            ], Response::HTTP_NOT_FOUND);
-        }
-
-        $data = json_decode($request->getContent(), true);
-
-        if (!is_array($data)) {
-            return $this->json([
-                'error' => 'Invalid JSON body'
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        $faceName = $data['face_name'] ?? null;
-
-        if (!is_string($faceName) || trim($faceName) === '') {
-            return $this->json([
-                'error' => 'face_name is required'
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        $faceName = trim($faceName);
-
-        foreach ($detail->getToothFaces() as $existingFace) {
-            if ($existingFace->getFaceName() === $faceName) {
-                return $this->json([
-                    'error' => 'This face already exists for the detail'
-                ], Response::HTTP_CONFLICT);
+            if (
+                $lastOdontogram instanceof Odontogram
+                && $lastOdontogram->getStatus() === self::STATUS_OPEN
+                && $lastOdontogram->getVisit()?->getPatient()?->getId() === $patient->getId()
+            ) {
+                return $lastOdontogram;
             }
         }
 
-        $face = new ToothFace();
-        $face->setFaceName($faceName);
-        $face->setOdontogramDetail($detail);
-
-        $this->entityManager->persist($face);
-        $this->entityManager->flush();
-
-        return $this->json([
-            'message' => 'Tooth face created successfully',
-            'id' => $face->getId(),
-            'detail_id' => $detail->getId(),
-            'face_name' => $face->getFaceName(),
-        ], Response::HTTP_CREATED);
+        return $this->odontogramRepository
+            ->createQueryBuilder('o')
+            ->innerJoin('o.visit', 'v')
+            ->innerJoin('v.patient', 'p')
+            ->andWhere('p.id = :patientId')
+            ->andWhere('o.status = :status')
+            ->setParameter('patientId', $patient->getId())
+            ->setParameter('status', self::STATUS_OPEN)
+            ->orderBy('o.id', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
     }
 
-    #[Route('/details/{detailId}/faces', name: 'api_tooth_face_list', requirements: ['detailId' => '\d+'], methods: ['GET'])]
-    public function listFaces(int $detailId): JsonResponse
+    private function getRequestData(Request $request): array
     {
-        $detail = $this->odontogramDetailRepository->find($detailId);
-
-        if (!$detail) {
-            return $this->json([
-                'error' => 'Odontogram detail not found'
-            ], Response::HTTP_NOT_FOUND);
+        if ($request->getContentTypeFormat() === 'json') {
+            try {
+                return $request->toArray();
+            } catch (\Throwable) {
+                return [];
+            }
         }
 
-        $items = [];
-        foreach ($detail->getToothFaces() as $face) {
-            $items[] = [
-                'id' => $face->getId(),
-                'face_name' => $face->getFaceName(),
-            ];
+        return $request->request->all();
+    }
+
+    /**
+     * @param array<int|string, mixed> $faces
+     * @return list<string>
+     */
+    private function normalizeFaces(array $faces): array
+    {
+        $cleanFaces = [];
+
+        foreach ($faces as $faceName) {
+            if (!is_string($faceName)) {
+                continue;
+            }
+
+            $normalizedFace = strtoupper(trim($faceName));
+            if ($normalizedFace === '') {
+                continue;
+            }
+
+            if (in_array($normalizedFace, $cleanFaces, true)) {
+                continue;
+            }
+
+            $cleanFaces[] = $normalizedFace;
         }
 
-        return $this->json($items, Response::HTTP_OK);
+        return $cleanFaces;
+    }
+
+    private function resolveTreatmentName(array $data): string
+    {
+        $candidates = [
+            $data['treatment_name'] ?? null,
+            $data['name'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                return trim($candidate);
+            }
+        }
+
+        return 'Nuevo tratamiento';
+    }
+
+    private function resolveTreatmentDescription(array $data): string
+    {
+        $candidate = $data['description'] ?? null;
+
+        if (is_string($candidate) && trim($candidate) !== '') {
+            return trim($candidate);
+        }
+
+        return 'Tratamiento generado automaticamente desde odontograma';
+    }
+
+    private function isPositiveInt(mixed $value): bool
+    {
+        return filter_var($value, \FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false;
+    }
+
+    private function beginTransaction(): void
+    {
+        $connection = $this->entityManager->getConnection();
+        if (!$connection->isTransactionActive()) {
+            $connection->beginTransaction();
+        }
+    }
+
+    private function commit(): void
+    {
+        $connection = $this->entityManager->getConnection();
+        if ($connection->isTransactionActive()) {
+            $connection->commit();
+        }
+    }
+
+    private function rollBack(): void
+    {
+        $connection = $this->entityManager->getConnection();
+        if ($connection->isTransactionActive()) {
+            $connection->rollBack();
+        }
     }
 
     private function serializeOdontogram(Odontogram $odontogram): array
@@ -362,6 +460,7 @@ final class OdontogramApiController extends AbstractController
             'id' => $odontogram->getId(),
             'status' => $odontogram->getStatus(),
             'visit_id' => $odontogram->getVisit()?->getId(),
+            'patient_id' => $odontogram->getVisit()?->getPatient()?->getId(),
             'treatment_id' => $odontogram->getTreatment()?->getId(),
             'details' => $details,
         ];
@@ -379,6 +478,7 @@ final class OdontogramApiController extends AbstractController
 
         return [
             'id' => $detail->getId(),
+            'odontogram_id' => $detail->getOdontogram()?->getId(),
             'tooth_number' => $detail->getToothNumber(),
             'pathology' => [
                 'id' => $detail->getPathology()?->getId(),
@@ -387,6 +487,18 @@ final class OdontogramApiController extends AbstractController
                 'visual_type' => $detail->getPathology()?->getVisualType(),
             ],
             'faces' => $faces,
+        ];
+    }
+
+    private function serializeTreatment(Treatment $treatment): array
+    {
+        return [
+            'id' => $treatment->getId(),
+            'treatment_name' => $treatment->getTreatmentName(),
+            'description' => $treatment->getDescription(),
+            'estimated_duration' => $treatment->getEstimatedDuration(),
+            'status' => $treatment->getStatus(),
+            'scheduling_notes' => $treatment->getSchedulingNotes(),
         ];
     }
 }
