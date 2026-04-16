@@ -11,6 +11,8 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: AppointmentRepository::class)]
 class Appointment
 {
+    public const CLEANING_TIME = 5;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -44,7 +46,7 @@ class Appointment
     private ?Box $box = null;
 
     #[ORM\ManyToOne(inversedBy: 'appointments')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: true)]
     private ?Treatment $treatment = null;
 
     /**
@@ -55,6 +57,11 @@ class Appointment
 
     #[ORM\Column]
     private ?int $durationMinutes = null;
+
+    public function getTotalDurationWithCleaning(): int
+    {
+        return ($this->getDurationMinutes() ?? 15) + self::CLEANING_TIME;
+    }
 
     public function __construct()
     {
@@ -171,10 +178,8 @@ class Appointment
     {
         $this->treatment = $treatment;
         
-        // Solo si hay tratamiento y tiene al menos una patología
         if ($treatment && $treatment->getPathologies()->count() > 0) {
             $pathology = $treatment->getPathologies()->first();
-            // Accedemos con seguridad a la duración por defecto
             $this->durationMinutes = $pathology->getPathologyType()->getDefaultDuration();
         }
         
@@ -222,19 +227,36 @@ class Appointment
         return $this;
     }
 
+    private $isFirstVisit = false;
+    public function isFirstVisit(): bool {
+        return $this->isFirstVisit || $this->consultationReason === 'Primera Visita';
+    }
+    
     public function setFirstVisit(bool $isFirstVisit): self
     {
         if ($isFirstVisit) {
-            $this->durationMinutes = 30;
+            if ($this->durationMinutes === null) {
+                $this->durationMinutes = 60;
+            }
             $this->consultationReason = 'Primera Visita';
         }
         return $this;
     }
+
+    private $isUrgency = false; 
+
+    public function isUrgency(): bool {
+
+        return $this->isUrgency;
+
+    }
     public function setUrgency(bool $isUrgency): self
     {
         if ($isUrgency) {
-            $this->durationMinutes = 30;
-            $this->consultationReason = 'Urgencia Médica';
+            if ($this->durationMinutes === null) {
+                $this->durationMinutes = 30;
+            }
+            $this->consultationReason = 'Urgencia';
         }
         return $this;
     }

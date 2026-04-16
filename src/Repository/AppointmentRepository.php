@@ -19,16 +19,15 @@ class AppointmentRepository extends ServiceEntityRepository
     public function findByDate(\DateTimeInterface $date): array
     {
         return $this->createQueryBuilder('a')
-            ->andWhere('a.visit_date = :date')
+            ->andWhere('a.visitDate = :date') 
             ->setParameter('date', $date->format('Y-m-d'))
-            ->orderBy('a.visit_time', 'ASC')
+            ->orderBy('a.visitTime', 'ASC')
             ->getQuery()
             ->getResult();
     }    
     
     public function findByWeek(\DateTime $date): array
     {
-        // Calculamos el inicio (Lunes) y fin (Domingo) de esa semana
         $startOfWeek = (clone $date)->modify('monday this week')->setTime(0, 0);
         $endOfWeek = (clone $date)->modify('sunday this week')->setTime(23, 59, 59);
 
@@ -43,8 +42,49 @@ class AppointmentRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+
+    public function findOverlappingAppointments($date, $startTime, int $duration, $boxId, $excludeId = null): array 
+    {
+        if ($startTime instanceof \DateTimeInterface) {
+            $start = \DateTimeImmutable::createFromInterface($startTime);
+        } else {
+            $start = new \DateTimeImmutable($startTime ?? 'now');
+        }
+
+        $totalDuration = $duration + Appointment::CLEANING_TIME;
+        $endTime = $start->modify("+" . $totalDuration . " minutes");
+
+        $dateParam = ($date instanceof \DateTimeInterface) ? $date->format('Y-m-d') : $date;
+
+        $qb = $this->createQueryBuilder('a')
+            ->where('a.visitDate = :date')
+            ->andWhere('a.box = :boxId')
+            ->setParameter('date', $dateParam)
+            ->setParameter('boxId', $boxId);
+
+        if ($excludeId) {
+            $qb->andWhere('a.id != :excludeId')
+               ->setParameter('excludeId', $excludeId);
+        }
+
+        $results = $qb->getQuery()->getResult();
+
+        return array_filter($results, function(Appointment $existing) use ($start, $endTime) {
+            $exStartRaw = $existing->getVisitTime();
+            if (!$exStartRaw) return false;
+
+            $exStart = \DateTimeImmutable::createFromInterface($exStartRaw);
+            
+            $exTotalDuration = $existing->getTotalDurationWithCleaning(); 
+            $exEnd = $exStart->modify("+" . $exTotalDuration . " minutes");
+            
+            return ($start < $exEnd && $endTime > $exStart);
+        });
+    }
+}
+
     /**
-     * Citas de un paciente, opcionalmente restringidas al médico (staff clínico).
+     * Cites d'un pacient, opcionalment restringides al metge (staff clínic).
      *
      * @return list<Appointment>
      */
@@ -66,3 +106,4 @@ class AppointmentRepository extends ServiceEntityRepository
         return $qb->getQuery()->getResult();
     }
 }
+

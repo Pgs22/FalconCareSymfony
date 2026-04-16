@@ -38,7 +38,7 @@ final class PatientApiController extends AbstractController
     #[OA\Get(
         path: '/api/patients',
         summary: 'List patients',
-        security: [['bearerAuth' => []]],
+        //security: [['bearerAuth' => []]],
         parameters: [
             new OA\Parameter(
                 name: 'search',

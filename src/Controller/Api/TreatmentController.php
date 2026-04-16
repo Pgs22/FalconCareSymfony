@@ -10,56 +10,94 @@ use App\Repository\PathologyRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Request;   
 use Symfony\Component\HttpFoundation\Response;
-
+use App\Repository\AppointmentRepository;
 
 #[Route('/api/treatments')]
 final class TreatmentController extends AbstractController
 {
-    /**
-     * Crea un tratamiento y le asigna patologías existentes.
-     */
-    #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
-    public function create(Request $request, EntityManagerInterface $em, PathologyRepository $pathRepo): JsonResponse 
-    {
+    #[Route('/new', name: 'api_treatment_new', methods: ['POST'])]
+    public function new(
+        Request $request, 
+        EntityManagerInterface $em, 
+        PathologyRepository $pathRepo,
+        AppointmentRepository $appRepo
+    ): JsonResponse {
         $data = json_decode($request->getContent(), true);
-        $treatment = new Treatment();
-        $treatment->setTreatmentName($data['name'] ?? 'Nuevo Plan');
+        
+        if (!$data) {
+            return $this->json(['error' => 'Dades invàlides'], 400);
+        }
 
-        if (!empty($data['pathology_ids'])) {
+        $treatment = new Treatment();
+        $treatment->setTreatmentName($data['name'] ?? 'Nou Pla de Tractament');
+        $treatment->setDescription($data['description'] ?? 'Creat des de l\'odontograma');
+        $treatment->setStatus('Actiu');
+        $treatment->setEstimatedDuration($data['duration'] ?? 30);
+
+        if (!empty($data['pathology_ids']) && is_array($data['pathology_ids'])) {
             foreach ($data['pathology_ids'] as $id) {
-                $path = $pathRepo->find($id);
+                $path = $pathRepo->find((int)$id); // Forzamos entero
                 if ($path) {
-                    // Aquí se dispara la lógica que acabamos de escribir arriba
                     $treatment->addPathology($path);
                 }
             }
         }
 
         $em->persist($treatment);
-        $em->flush();
 
-        return $this->json(['id' => $treatment->getId()]);
-    }
-
-    #[Route('/patient/{id}', name: 'api_treatment_by_patient', methods: ['GET'])]
-    public function getByPatient(int $id, PatientRepository $patientRepo): JsonResponse
-    {
-        $patient = $patientRepo->find($id);
-        if (!$patient) {
-            return $this->json(['error' => 'Paciente no encontrado'], 404);
+        if (!empty($data['appointment_id'])) {
+            $appointment = $appRepo->find((int)$data['appointment_id']);
+            if ($appointment) {
+                $appointment->setTreatment($treatment);
+                $em->persist($appointment);
+            }
         }
 
-        $treatments = $patient->getTreatments();
+        $em->flush();
+
+        return $this->json([
+            'id' => $treatment->getId(),
+            'status' => 'success',
+            'message' => 'Tractament creat i vinculat correctament'
+        ]);
+    }
+
+
+    #[Route('/patient/{id}', name: 'api_treatment_by_patient', methods: ['GET'])]
+    public function getByPatient(
+        int $id, 
+        PatientRepository $patientRepo, 
+        AppointmentRepository $appointmentRepo
+    ): JsonResponse {
+        $patient = $patientRepo->find($id);
+        if (!$patient) {
+            return $this->json(['error' => 'Pacient no trobat'], 404);
+        }
+
+        $appointments = $appointmentRepo->findBy(['patient' => $patient]);
         
         $data = [];
-        foreach ($treatments as $t) {
-            if ($t->getStatus() !== 'COMPLETED') {
+        $seenTreatments = [];
+
+        foreach ($appointments as $app) {
+            $t = $app->getTreatment();
+            
+            if ($t && strtolower(trim($t->getStatus())) === 'actiu' && !in_array($t->getId(), $seenTreatments)) {
+                
+                $seenTreatments[] = $t->getId();
+                $firstPathology = $t->getPathologies()->first() ?: null;
+                $pathologyType = $firstPathology ? $firstPathology->getPathologyType() : null;
+                $dbStatus = $t->getStatus();
+
                 $data[] = [
-                    'id' => $t->getId(),
-                    'name' => $t->getName(),
-                    'status' => $t->getStatus()
+                    'treatmentId'       => $t->getId(),
+                    'treatmentName'     => $t->getTreatmentName(),
+                    'status_real'       => $dbStatus,
+                    'pathologyId'       => $firstPathology ? $firstPathology->getId() : null,
+                    'pathologyTypeName' => $pathologyType ? $pathologyType->getName() : 'Sense tipus',
+                    'duration'          => $pathologyType ? $pathologyType->getDefaultDuration() : 30
                 ];
             }
         }

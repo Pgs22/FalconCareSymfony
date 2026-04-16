@@ -36,7 +36,7 @@ class AppointmentType extends AbstractType
             ])
             ->add('treatment', EntityType::class, [
                 'class' => Treatment::class,
-                'choice_label' => 'id',
+                'required' => false,
             ])
         ;
     }
@@ -45,6 +45,8 @@ class AppointmentType extends AbstractType
     {
         $resolver->setDefaults([
             'data_class' => Appointment::class,
+            'csrf_protection' => false,
+            'allow_extra_fields' => true,
         ]);
     }
 }
