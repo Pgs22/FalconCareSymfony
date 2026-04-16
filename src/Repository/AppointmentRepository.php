@@ -83,27 +83,4 @@ class AppointmentRepository extends ServiceEntityRepository
     }
 }
 
-    /**
-     * Cites d'un pacient, opcionalment restringides al metge (staff clínic).
-     *
-     * @return list<Appointment>
-     */
-    public function findByPatientId(int $patientId, ?int $restrictedDoctorId): array
-    {
-        $qb = $this->createQueryBuilder('a')
-            ->join('a.patient', 'p')
-            ->andWhere('p.id = :pid')
-            ->setParameter('pid', $patientId)
-            ->orderBy('a.visitDate', 'ASC')
-            ->addOrderBy('a.visitTime', 'ASC');
-
-        if ($restrictedDoctorId !== null) {
-            $qb->join('a.doctor', 'doc')
-                ->andWhere('doc.id = :did')
-                ->setParameter('did', $restrictedDoctorId);
-        }
-
-        return $qb->getQuery()->getResult();
-    }
-}
 
