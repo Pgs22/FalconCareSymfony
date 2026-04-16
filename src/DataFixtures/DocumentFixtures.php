@@ -56,7 +56,8 @@ class DocumentFixtures extends Fixture implements FixtureGroupInterface
                 // --- CONFIGURE DOCUMENT ENTITY ---
                 $document = new Document();
                 $document->setFilePath($newFilename);
-                $document->setType($this->faker->randomElement(['Report', 'X-ray', 'Lab Results']));
+                $document->setType('application/pdf');
+                $document->setOriginalName('fixture-' . $newFilename);
                 $document->setCaptureDate(\DateTimeImmutable::createFromMutable($this->faker->dateTimeThisYear()));
                 $document->setPatient($patient); // Assign to existing patient [cite: 12-02-2026]
 

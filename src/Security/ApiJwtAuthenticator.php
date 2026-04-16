@@ -2,6 +2,9 @@
 
 namespace App\Security;
 
+use Firebase\JWT\BeforeValidException;
+use Firebase\JWT\ExpiredException;
+use Firebase\JWT\SignatureInvalidException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -29,7 +32,7 @@ final class ApiJwtAuthenticator extends AbstractAuthenticator
             return false;
         }
 
-        if (str_starts_with($path, '/api/docs') || $path === '/api/auth/login' || $path === '/api/health') {
+        if (str_starts_with($path, '/api/docs') || $path === '/api/auth/login' || $path === '/api/auth/register-doctor' || $path === '/api/health') {
             return false;
         }
 
@@ -52,7 +55,15 @@ final class ApiJwtAuthenticator extends AbstractAuthenticator
             throw new AuthenticationException('Missing Bearer token');
         }
 
-        $claims = $this->jwtTokenManager->decode($token);
+        try {
+            $claims = $this->jwtTokenManager->decode($token);
+        } catch (ExpiredException $e) {
+            throw new AuthenticationException('Expired token', 0, $e);
+        } catch (SignatureInvalidException|BeforeValidException $e) {
+            throw new AuthenticationException('Invalid token signature', 0, $e);
+        } catch (\Throwable $e) {
+            throw new AuthenticationException('Invalid token', 0, $e);
+        }
         $email = (string) ($claims['email'] ?? '');
 
         // Security hardening: ensure token was issued for the expected frontend.

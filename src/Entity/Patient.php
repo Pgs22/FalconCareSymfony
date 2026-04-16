@@ -55,6 +55,9 @@ class Patient
     #[ORM\Column(type: Types::TEXT)]
     private ?string $medicationAllergies = null;
 
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $profileImage = null;
+
     #[ORM\Column(nullable: true)]
     private ?int $lastOdontogramId = null;
 
@@ -244,6 +247,18 @@ class Patient
     public function setMedicationAllergies(string $medicationAllergies): static
     {
         $this->medicationAllergies = $medicationAllergies;
+
+        return $this;
+    }
+
+    public function getProfileImage(): ?string
+    {
+        return $this->profileImage;
+    }
+
+    public function setProfileImage(?string $profileImage): static
+    {
+        $this->profileImage = $profileImage;
 
         return $this;
     }

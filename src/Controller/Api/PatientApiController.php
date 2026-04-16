@@ -4,38 +4,102 @@ namespace App\Controller\Api;
 
 use App\Entity\Patient;
 use App\Entity\User;
+use App\Repository\DocumentRepository;
 use App\Repository\PatientRepository;
 use App\Repository\UserRepository;
+use App\Service\PatientRecordsAccessChecker;
+use App\Util\DocumentApiSerializer;
+use App\Util\PatientMedicationAllergiesResolver;
+use App\Util\PatientProfileImageResolver;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
 
+/**
+ * JSON paciente:
+ * - Alergias: `medicationAllergies` canónico; `medication_allergies` duplicado; POST/PUT aceptan ambas (deben coincidir si vienen las dos).
+ * - Imagen perfil: `profile_image` canónico; `profile_image_url` y `profileImage` compat; prioridad de entrada: profile_image > profile_image_url > profileImage.
+ */
 #[Route('/api/patients')]
 #[OA\Tag(name: 'Patients')]
 final class PatientApiController extends AbstractController
 {
+    public function __construct(
+        private readonly PatientRecordsAccessChecker $patientRecordsAccess,
+    ) {
+    }
+
     #[Route('', name: 'api_patient_list', methods: ['GET'])]
     #[OA\Get(
         path: '/api/patients',
         summary: 'List patients',
         //security: [['bearerAuth' => []]],
         parameters: [
-            new OA\Parameter(name: 'search', in: 'query', required: false, schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(
+                name: 'search',
+                in: 'query',
+                required: false,
+                description: 'Optional filter: first name, last name, full name, and numeric patient id when the term is only digits.',
+                schema: new OA\Schema(type: 'string')
+            ),
         ],
         responses: [new OA\Response(response: 200, description: 'Patient list')]
     )]
     public function list(Request $request, PatientRepository $repo): JsonResponse
     {
         $search = trim((string) $request->query->get('search', ''));
-        $patients = $search !== '' ? $repo->findByName($search) : $repo->getAll();
+        try {
+            $patients = $search !== '' ? $repo->search($search) : $repo->getAll();
+        } catch (\Throwable) {
+            $patients = [];
+        }
 
         $data = array_map(static fn (Patient $patient) => self::serializePatient($patient), $patients);
 
         return $this->json($data, Response::HTTP_OK);
+    }
+
+    #[Route('/{id}/documents', name: 'api_patient_documents_list', requirements: ['id' => '\\d+'], methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/patients/{id}/documents',
+        summary: 'List documents for patient',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'Array or hydra:Collection'),
+            new OA\Response(response: 403, description: 'Forbidden'),
+            new OA\Response(response: 404, description: 'Patient not found'),
+        ]
+    )]
+    public function listDocuments(
+        int $id,
+        Request $request,
+        DocumentRepository $documentRepository,
+        PatientRepository $repo,
+        #[Autowire('%env(API_BASE_URL)%')]
+        string $apiBaseUrl,
+    ): JsonResponse {
+        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
+            return $this->json(
+                ['error' => 'Forbidden', 'message' => 'You do not have permission to list patient documents.'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
+        $patient = $repo->findById($id);
+        if (!$patient) {
+            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+        }
+
+        $documents = $documentRepository->findByPatientOrdered($patient);
+        $members = DocumentApiSerializer::collection($documents, $apiBaseUrl);
+
+        return DocumentApiSerializer::createDocumentListResponse($request, $members);
     }
 
     #[Route('/{id}', name: 'api_patient_show', requirements: ['id' => '\\d+'], methods: ['GET'])]
@@ -87,7 +151,11 @@ final class PatientApiController extends AbstractController
         path: '/api/patients',
         summary: 'Create patient',
         security: [],
-        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(type: 'object')),
+        requestBody: new OA\RequestBody(
+            required: true,
+            description: 'Include medicationAllergies and/or medication_allergies (same value if both). GET responses expose both keys; medicationAllergies is the canonical field.',
+            content: new OA\JsonContent(type: 'object')
+        ),
         responses: [
             new OA\Response(response: 201, description: 'Created'),
             new OA\Response(response: 400, description: 'Bad request'),
@@ -102,11 +170,16 @@ final class PatientApiController extends AbstractController
     {
         $data = $request->getContentTypeFormat() === 'json' ? $request->toArray() : $request->request->all();
 
-        $required = ['identityDocument', 'firstName', 'lastName', 'phone', 'email', 'address', 'consultationReason', 'familyHistory', 'healthStatus', 'lifestyleHabits', 'medicationAllergies'];
+        $required = ['identityDocument', 'firstName', 'lastName', 'phone', 'email', 'address', 'consultationReason', 'familyHistory', 'healthStatus', 'lifestyleHabits'];
         foreach ($required as $field) {
             if (!isset($data[$field]) || trim((string) $data[$field]) === '') {
                 return $this->json(['message' => 'Missing required fields'], Response::HTTP_BAD_REQUEST);
             }
+        }
+
+        $allergiesResolved = PatientMedicationAllergiesResolver::resolveForCreate($data);
+        if (!$allergiesResolved['ok']) {
+            return $this->json(['message' => $allergiesResolved['message']], Response::HTTP_BAD_REQUEST);
         }
 
         $identityDocument = (string) $data['identityDocument'];
@@ -131,7 +204,7 @@ final class PatientApiController extends AbstractController
         $patient->setFamilyHistory((string) $data['familyHistory']);
         $patient->setHealthStatus((string) $data['healthStatus']);
         $patient->setLifestyleHabits((string) $data['lifestyleHabits']);
-        $patient->setMedicationAllergies((string) $data['medicationAllergies']);
+        $patient->setMedicationAllergies($allergiesResolved['value']);
 
         if (!empty($data['registrationDate'])) {
             try {
@@ -141,6 +214,15 @@ final class PatientApiController extends AbstractController
             }
         } else {
             $patient->setRegistrationDate(new \DateTimeImmutable());
+        }
+
+        $profilePick = PatientProfileImageResolver::pickFromArray($data);
+        if ($profilePick['present'] ?? false) {
+            $normalized = PatientProfileImageResolver::validateAndNormalize($profilePick['value']);
+            if (!$normalized['ok']) {
+                return $this->json(['message' => $normalized['message']], Response::HTTP_BAD_REQUEST);
+            }
+            $patient->setProfileImage($normalized['value']);
         }
 
         $repo->create($patient);
@@ -159,20 +241,32 @@ final class PatientApiController extends AbstractController
         return $this->json(self::serializePatient($patient), Response::HTTP_CREATED);
     }
 
-    #[Route('/{id}', name: 'api_patient_update', requirements: ['id' => '\\d+'], methods: ['PUT'])]
+    #[Route('/{id}', name: 'api_patient_update', requirements: ['id' => '\\d+'], methods: ['PUT', 'PATCH'])]
     #[OA\Put(
         path: '/api/patients/{id}',
-        summary: 'Update patient',
+        summary: 'Update patient (PUT or PATCH; partial body)',
         security: [['bearerAuth' => []]],
         parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
-        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(type: 'object')),
+        requestBody: new OA\RequestBody(
+            required: true,
+            description: 'Partial JSON: only include fields to update. profile_image: data URL or null to clear. Allergies: medicationAllergies and/or medication_allergies (must match if both sent). Requires ROLE_DOCTOR, ROLE_STAFF, or ROLE_ADMIN.',
+            content: new OA\JsonContent(type: 'object')
+        ),
         responses: [
             new OA\Response(response: 200, description: 'Updated'),
+            new OA\Response(response: 400, description: 'Validation error'),
             new OA\Response(response: 404, description: 'Not found'),
         ]
     )]
     public function update(Request $request, int $id, PatientRepository $repo): JsonResponse
     {
+        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
+            return $this->json(
+                ['error' => 'Forbidden', 'message' => 'You do not have permission to update patients.'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
         $patient = $repo->findById($id);
         if (!$patient) {
             return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
@@ -213,8 +307,22 @@ final class PatientApiController extends AbstractController
         if (array_key_exists('lifestyleHabits', $data)) {
             $patient->setLifestyleHabits((string) $data['lifestyleHabits']);
         }
-        if (array_key_exists('medicationAllergies', $data)) {
-            $patient->setMedicationAllergies((string) $data['medicationAllergies']);
+
+        $allergiesUpdate = PatientMedicationAllergiesResolver::resolveForPartialUpdate($data);
+        if (($allergiesUpdate['apply'] ?? false) === true) {
+            if (isset($allergiesUpdate['error'])) {
+                return $this->json(['message' => $allergiesUpdate['error']], Response::HTTP_BAD_REQUEST);
+            }
+            $patient->setMedicationAllergies($allergiesUpdate['value']);
+        }
+
+        $profilePick = PatientProfileImageResolver::pickFromArray($data);
+        if ($profilePick['present'] ?? false) {
+            $normalized = PatientProfileImageResolver::validateAndNormalize($profilePick['value']);
+            if (!$normalized['ok']) {
+                return $this->json(['message' => $normalized['message']], Response::HTTP_BAD_REQUEST);
+            }
+            $patient->setProfileImage($normalized['value']);
         }
 
         if (!empty($data['registrationDate'])) {
@@ -255,6 +363,8 @@ final class PatientApiController extends AbstractController
 
     private static function serializePatient(Patient $patient): array
     {
+        $profile = PatientProfileImageResolver::normalizeForApi($patient->getProfileImage());
+
         return [
             'id' => $patient->getId(),
             'identityDocument' => $patient->getIdentityDocument(),
@@ -270,6 +380,11 @@ final class PatientApiController extends AbstractController
             'lifestyleHabits' => $patient->getLifestyleHabits(),
             'registrationDate' => $patient->getRegistrationDate()?->format(DATE_ATOM),
             'medicationAllergies' => $patient->getMedicationAllergies(),
+            'medication_allergies' => $patient->getMedicationAllergies(),
+            'profile_image' => $profile,
+            'profile_image_url' => $profile,
+            'profileImage' => $profile,
+            'profileImageUrl' => $profile,
         ];
     }
 }

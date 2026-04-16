@@ -141,6 +141,12 @@ symfony server:start
 - Passwords are handled by Symfony’s **Security** component.
 - `symfony/serializer` is installed to expose entities as JSON (e.g. for an Angular frontend).
 
+### REST `/api/patients` (Angular / Neon)
+
+- Base path: `/api` (e.g. dev `http://127.0.0.1:8000/api/patients`). JWT Bearer on protected routes.
+- **List + search:** `GET /api/patients?search=...` returns a JSON **array** (`200`). If `search` is only digits, the backend resolves by **patient `id`** first, then by name; the query avoids driver-specific failures (DQL `CONCAT` uses two arguments per call).
+- **Patient JSON:** canonical field for allergies is **`medicationAllergies`**; responses also include **`medication_allergies`** with the same string. **POST/PUT** accept either key; if both are sent they must match.
+
 ---
 
 ## Tests and useful commands

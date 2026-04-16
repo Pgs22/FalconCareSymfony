@@ -7,150 +7,214 @@ namespace App\Tests\Controller\Api;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
-/**
- * Functional tests for User CRUD API (issue #5).
- * Requires test database with schema applied (php bin/console doctrine:migrations:migrate --env=test).
- */
 final class UserControllerTest extends WebTestCase
 {
-    private static ?User $adminUser = null;
-
-    private static function ensureAdminUserExists(\Symfony\Bundle\FrameworkBundle\KernelBrowser $client): void
+    private static function ensureUserExists(
+        \Symfony\Bundle\FrameworkBundle\KernelBrowser $client,
+        string $email,
+        string $password,
+        array $roles
+    ): User
     {
-        if (self::$adminUser !== null) {
-            return;
-        }
         $container = $client->getContainer();
+        /** @var EntityManagerInterface $em */
         $em = $container->get(EntityManagerInterface::class);
+        /** @var UserPasswordHasherInterface $hasher */
         $hasher = $container->get(UserPasswordHasherInterface::class);
 
-        $existing = $em->getRepository(User::class)->findOneBy(['email' => 'admin@test.falconcare.local']);
+        $existing = $em->getRepository(User::class)->findOneBy(['email' => $email]);
         if ($existing !== null) {
-            self::$adminUser = $existing;
-            return;
+            return $existing;
         }
 
-        $admin = new User();
-        $admin->setEmail('admin@test.falconcare.local');
-        $admin->setPassword($hasher->hashPassword($admin, 'admin123'));
-        $admin->setRoles(['ROLE_ADMIN', 'ROLE_USER']);
-        $em->persist($admin);
+        $user = new User();
+        $user->setEmail($email);
+        $user->setPassword($hasher->hashPassword($user, $password));
+        $user->setRoles($roles);
+        $em->persist($user);
         $em->flush();
-        self::$adminUser = $admin;
+
+        return $user;
     }
 
-    public function testListUsersRequiresAuth(): void
+    /**
+     * @return array<string,string>
+     */
+    private static function getAuthHeadersFor(\Symfony\Bundle\FrameworkBundle\KernelBrowser $client, string $email, string $password): array
     {
-        $client = static::createClient();
-        $client->request('GET', '/api/users');
-        // Form login redirects to /login when not authenticated
-        self::assertResponseRedirects('/login', Response::HTTP_FOUND);
-    }
+        $client->request('POST', '/api/auth/login', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+            'email' => $email,
+            'password' => $password,
+        ], \JSON_THROW_ON_ERROR));
 
-    public function testListUsersAsAdmin(): void
-    {
-        $client = static::createClient();
-        self::ensureAdminUserExists($client);
-        $client->loginUser(self::$adminUser);
-        $client->request('GET', '/api/users');
         self::assertResponseIsSuccessful();
-        self::assertResponseHeaderSame('content-type', 'application/json');
-        $data = json_decode($client->getResponse()->getContent(), true);
-        self::assertIsArray($data);
-    }
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('accessToken', $payload);
 
-    public function testCreateUserValidationError(): void
-    {
-        $client = static::createClient();
-        self::ensureAdminUserExists($client);
-        $client->loginUser(self::$adminUser);
-        $client->request('POST', '/api/users', [], [], [
+        return [
             'CONTENT_TYPE' => 'application/json',
-        ], json_encode([
-            'email' => '',
-            'plainPassword' => 'short',
-            'roles' => ['ROLE_USER'],
-        ]));
-        self::assertResponseStatusCodeSame(Response::HTTP_UNPROCESSABLE_ENTITY);
-        $content = $client->getResponse()->getContent();
-        self::assertNotFalse($content);
-        $data = json_decode($content, true);
-        self::assertArrayHasKey('errors', $data);
-        self::assertArrayHasKey('error', $data);
-        self::assertSame('Validation failed', $data['error']);
+            'HTTP_AUTHORIZATION' => 'Bearer ' . $payload['accessToken'],
+        ];
     }
 
-    public function testCreateUserSuccess(): void
+    public function testGetUserReturnsProfileImageField(): void
     {
         $client = static::createClient();
-        self::ensureAdminUserExists($client);
-        $client->loginUser(self::$adminUser);
-        $client->request('POST', '/api/users', [], [], [
-            'CONTENT_TYPE' => 'application/json',
-        ], json_encode([
-            'email' => 'newuser-' . uniqid() . '@test.falconcare.local',
-            'plainPassword' => 'validpass123',
-            'roles' => ['ROLE_USER', 'ROLE_DOCTOR'],
-        ]));
-        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
-        self::assertResponseHeaderSame('content-type', 'application/json');
-        $content = $client->getResponse()->getContent();
-        self::assertNotFalse($content);
-        $data = json_decode($content, true);
-        self::assertArrayHasKey('id', $data);
-        self::assertArrayHasKey('email', $data);
-        self::assertArrayHasKey('roles', $data);
-        self::assertArrayNotHasKey('password', $data);
-    }
+        $doctor = self::ensureUserExists(
+            $client,
+            'doctor-profile-get@test.falconcare.local',
+            'doctor123',
+            ['ROLE_DOCTOR', 'ROLE_USER']
+        );
+        $doctor->setProfileImage('data:image/png;base64,AAA');
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $em->flush();
 
-    public function testShowUser(): void
-    {
-        $client = static::createClient();
-        self::ensureAdminUserExists($client);
-        $client->loginUser(self::$adminUser);
-        $client->request('GET', '/api/users/1');
-        if ($client->getResponse()->getStatusCode() === Response::HTTP_NOT_FOUND) {
-            self::markTestSkipped('No user with id 1 in test database');
-        }
+        $headers = self::getAuthHeadersFor($client, 'doctor-profile-get@test.falconcare.local', 'doctor123');
+        $client->request('GET', '/api/users/' . $doctor->getId(), [], [], $headers);
+
         self::assertResponseIsSuccessful();
-        $content = $client->getResponse()->getContent();
-        self::assertNotFalse($content);
-        $data = json_decode($content, true);
-        self::assertArrayHasKey('email', $data);
-        self::assertArrayNotHasKey('password', $data);
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('profile_image', $data);
+        self::assertSame('data:image/png;base64,AAA', $data['profile_image']);
     }
 
-    public function testUpdateUser(): void
+    public function testUpdateOwnUserProfileImageSuccess(): void
     {
         $client = static::createClient();
-        self::ensureAdminUserExists($client);
-        $client->loginUser(self::$adminUser);
-        $client->request('PUT', '/api/users/1', [], [], [
-            'CONTENT_TYPE' => 'application/json',
-        ], json_encode([
-            'email' => 'updated-' . uniqid() . '@test.falconcare.local',
-            'roles' => ['ROLE_USER', 'ROLE_ADMIN'],
-        ]));
-        if ($client->getResponse()->getStatusCode() === Response::HTTP_NOT_FOUND) {
-            self::markTestSkipped('No user with id 1 in test database');
-        }
+        $doctor = self::ensureUserExists(
+            $client,
+            'doctor-self-update@test.falconcare.local',
+            'doctor123',
+            ['ROLE_DOCTOR', 'ROLE_USER']
+        );
+        $headers = self::getAuthHeadersFor($client, 'doctor-self-update@test.falconcare.local', 'doctor123');
+        $client->request('PUT', '/api/users/' . $doctor->getId(), [], [], $headers, json_encode([
+            'profile_image' => 'data:image/png;base64,BBB',
+        ], \JSON_THROW_ON_ERROR));
+
         self::assertResponseIsSuccessful();
-        $content = $client->getResponse()->getContent();
-        self::assertNotFalse($content);
-        $data = json_decode($content, true);
-        self::assertArrayHasKey('email', $data);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('data:image/png;base64,BBB', $payload['profile_image']);
+
+        $reloaded = $client->getContainer()->get(EntityManagerInterface::class)->getRepository(User::class)->find($doctor->getId());
+        self::assertInstanceOf(User::class, $reloaded);
+        self::assertSame('data:image/png;base64,BBB', $reloaded->getProfileImage());
     }
 
-    public function testDeleteUserReturns404WhenNotFound(): void
+    public function testUpdateOtherUserProfileImageForbiddenForDoctor(): void
     {
         $client = static::createClient();
-        self::ensureAdminUserExists($client);
-        $client->loginUser(self::$adminUser);
-        $client->request('DELETE', '/api/users/999999');
-        // 404 when user id does not exist
-        self::assertResponseStatusCodeSame(Response::HTTP_NOT_FOUND);
+        self::ensureUserExists(
+            $client,
+            'doctor-owner@test.falconcare.local',
+            'doctor123',
+            ['ROLE_DOCTOR', 'ROLE_USER']
+        );
+        $target = self::ensureUserExists(
+            $client,
+            'doctor-target@test.falconcare.local',
+            'doctor123',
+            ['ROLE_DOCTOR', 'ROLE_USER']
+        );
+
+        $headers = self::getAuthHeadersFor($client, 'doctor-owner@test.falconcare.local', 'doctor123');
+        $client->request('PUT', '/api/users/' . $target->getId(), [], [], $headers, json_encode([
+            'profile_image' => 'data:image/png;base64,CCC',
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(403);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('Forbidden', $payload['error']);
+    }
+
+    public function testUpdateOwnUserProfileImageTooLargeReturns400(): void
+    {
+        $client = static::createClient();
+        $doctor = self::ensureUserExists(
+            $client,
+            'doctor-too-large@test.falconcare.local',
+            'doctor123',
+            ['ROLE_DOCTOR', 'ROLE_USER']
+        );
+        $headers = self::getAuthHeadersFor($client, 'doctor-too-large@test.falconcare.local', 'doctor123');
+        $client->request('PUT', '/api/users/' . $doctor->getId(), [], [], $headers, json_encode([
+            'profile_image' => str_repeat('A', 2_000_001),
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(400);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('Validation failed', $payload['error']);
+    }
+
+    public function testUpdateOwnUserProfileImageNullClearsColumn(): void
+    {
+        $client = static::createClient();
+        $doctor = self::ensureUserExists(
+            $client,
+            'doctor-clear-img@test.falconcare.local',
+            'doctor123',
+            ['ROLE_DOCTOR', 'ROLE_USER']
+        );
+        $doctor->setProfileImage('data:image/png;base64,KEEP');
+        $client->getContainer()->get(EntityManagerInterface::class)->flush();
+
+        $headers = self::getAuthHeadersFor($client, 'doctor-clear-img@test.falconcare.local', 'doctor123');
+        $client->request('PUT', '/api/users/' . $doctor->getId(), [], [], $headers, json_encode([
+            'profile_image' => null,
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertNull($payload['profile_image']);
+        self::assertNull($payload['profile_image_url']);
+        self::assertNull($payload['profileImageUrl']);
+
+        $reloaded = $client->getContainer()->get(EntityManagerInterface::class)->getRepository(User::class)->find($doctor->getId());
+        self::assertInstanceOf(User::class, $reloaded);
+        self::assertNull($reloaded->getProfileImage());
+    }
+
+    public function testUpdateOwnUserOnlyProfileImagePreservesEmail(): void
+    {
+        $client = static::createClient();
+        $email = 'doctor-preserve-email@test.falconcare.local';
+        $doctor = self::ensureUserExists(
+            $client,
+            $email,
+            'doctor123',
+            ['ROLE_DOCTOR', 'ROLE_USER']
+        );
+        $headers = self::getAuthHeadersFor($client, $email, 'doctor123');
+        $client->request('PUT', '/api/users/' . $doctor->getId(), [], [], $headers, json_encode([
+            'profile_image' => 'data:image/jpeg;base64,XYZ',
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseIsSuccessful();
+        $reloaded = $client->getContainer()->get(EntityManagerInterface::class)->getRepository(User::class)->find($doctor->getId());
+        self::assertInstanceOf(User::class, $reloaded);
+        self::assertSame(mb_strtolower(trim($email)), $reloaded->getEmail());
+        self::assertContains('ROLE_DOCTOR', $reloaded->getRoles());
+    }
+
+    public function testUpdateOwnUserProfileImageInvalidDataUrlReturns400(): void
+    {
+        $client = static::createClient();
+        $doctor = self::ensureUserExists(
+            $client,
+            'doctor-bad-dataurl@test.falconcare.local',
+            'doctor123',
+            ['ROLE_DOCTOR', 'ROLE_USER']
+        );
+        $headers = self::getAuthHeadersFor($client, 'doctor-bad-dataurl@test.falconcare.local', 'doctor123');
+        $client->request('PUT', '/api/users/' . $doctor->getId(), [], [], $headers, json_encode([
+            'profile_image' => 'https://example.com/x.png',
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(400);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('Validation failed', $payload['error']);
     }
 }

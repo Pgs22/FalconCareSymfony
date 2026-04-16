@@ -5,6 +5,7 @@ namespace App\Controller\Api;
 use App\Entity\User;
 use App\Form\UserType;
 use App\Repository\UserRepository;
+use App\Util\PatientProfileImageResolver;
 use Doctrine\ORM\EntityManagerInterface;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -13,8 +14,6 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
-use Symfony\Component\Serializer\SerializerInterface;
 
 #[Route('/api/users')]
 #[OA\Tag(name: 'Users')]
@@ -23,7 +22,6 @@ final class UserController extends AbstractController
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly UserRepository $userRepository,
-        private readonly SerializerInterface $serializer,
         private readonly UserPasswordHasherInterface $passwordHasher,
     ) {
     }
@@ -59,11 +57,9 @@ final class UserController extends AbstractController
     public function index(): JsonResponse
     {
         $users = $this->userRepository->findBy([], ['id' => 'ASC']);
-        $data = $this->serializer->serialize($users, 'json', [
-            AbstractNormalizer::IGNORED_ATTRIBUTES => ['password'],
-        ]);
+        $data = array_map(fn (User $user) => $this->serializeUser($user), $users);
 
-        return new JsonResponse($data, Response::HTTP_OK, [], true);
+        return $this->json($data, Response::HTTP_OK);
     }
 
     /**
@@ -84,11 +80,11 @@ final class UserController extends AbstractController
     )]
     public function show(User $user): JsonResponse
     {
-        $data = $this->serializer->serialize($user, 'json', [
-            AbstractNormalizer::IGNORED_ATTRIBUTES => ['password'],
-        ]);
+        if (!$this->canAccessUser($user)) {
+            return $this->json(['error' => 'Forbidden', 'message' => 'You can only access your own user profile.'], Response::HTTP_FORBIDDEN);
+        }
 
-        return new JsonResponse($data, Response::HTTP_OK, [], true);
+        return $this->json($this->serializeUser($user), Response::HTTP_OK);
     }
 
     /**
@@ -121,7 +117,12 @@ final class UserController extends AbstractController
     {
         $user = new User();
         $form = $this->createForm(UserType::class, $user, ['require_password' => true, 'csrf_protection' => false]);
-        $form->submit(self::getRequestData($request));
+        $requestData = self::getRequestData($request);
+        self::applyProfileImageAliases($requestData);
+        if (($response = self::normalizeProfileImageInRequest($requestData)) instanceof JsonResponse) {
+            return $response;
+        }
+        $form->submit($requestData);
 
         if (!$form->isValid()) {
             return $this->validationErrorResponse($form);
@@ -135,11 +136,7 @@ final class UserController extends AbstractController
         $this->entityManager->persist($user);
         $this->entityManager->flush();
 
-        $data = $this->serializer->serialize($user, 'json', [
-            AbstractNormalizer::IGNORED_ATTRIBUTES => ['password'],
-        ]);
-
-        return new JsonResponse($data, Response::HTTP_CREATED, [], true);
+        return $this->json($this->serializeUser($user), Response::HTTP_CREATED);
     }
 
     /**
@@ -171,8 +168,18 @@ final class UserController extends AbstractController
     )]
     public function update(Request $request, User $user): JsonResponse
     {
+        if (!$this->canAccessUser($user)) {
+            return $this->json(['error' => 'Forbidden', 'message' => 'You can only update your own user profile.'], Response::HTTP_FORBIDDEN);
+        }
+
+        $requestData = self::getRequestData($request);
+        self::applyProfileImageAliases($requestData);
+        if (($response = self::normalizeProfileImageInRequest($requestData)) instanceof JsonResponse) {
+            return $response;
+        }
+
         $form = $this->createForm(UserType::class, $user, ['require_password' => false, 'csrf_protection' => false]);
-        $form->submit(self::getRequestData($request), false);
+        $form->submit($requestData, false);
 
         if (!$form->isValid()) {
             return $this->validationErrorResponse($form);
@@ -185,11 +192,7 @@ final class UserController extends AbstractController
 
         $this->entityManager->flush();
 
-        $data = $this->serializer->serialize($user, 'json', [
-            AbstractNormalizer::IGNORED_ATTRIBUTES => ['password'],
-        ]);
-
-        return new JsonResponse($data, Response::HTTP_OK, [], true);
+        return $this->json($this->serializeUser($user), Response::HTTP_OK);
     }
 
     /**
@@ -240,5 +243,72 @@ final class UserController extends AbstractController
             'error' => 'Validation failed',
             'errors' => $errors,
         ], Response::HTTP_UNPROCESSABLE_ENTITY);
+    }
+
+    private static function applyProfileImageAliases(array &$requestData): void
+    {
+        if (array_key_exists('profile_image', $requestData)) {
+            $requestData['profileImage'] = $requestData['profile_image'];
+            unset($requestData['profile_image'], $requestData['profile_image_url'], $requestData['profileImageUrl']);
+
+            return;
+        }
+
+        if (array_key_exists('profile_image_url', $requestData)) {
+            $requestData['profileImage'] = $requestData['profile_image_url'];
+            unset($requestData['profile_image'], $requestData['profile_image_url'], $requestData['profileImageUrl']);
+
+            return;
+        }
+
+        if (array_key_exists('profileImageUrl', $requestData)) {
+            $requestData['profileImage'] = $requestData['profileImageUrl'];
+            unset($requestData['profile_image'], $requestData['profile_image_url'], $requestData['profileImageUrl']);
+        }
+    }
+
+    /**
+     * Validates and normalizes `profileImage` in place (empty string → null) when present.
+     */
+    private static function normalizeProfileImageInRequest(array &$requestData): ?JsonResponse
+    {
+        if (!array_key_exists('profileImage', $requestData)) {
+            return null;
+        }
+
+        $result = PatientProfileImageResolver::validateAndNormalize($requestData['profileImage']);
+        if (!$result['ok']) {
+            return new JsonResponse([
+                'error' => 'Validation failed',
+                'message' => $result['message'],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+        $requestData['profileImage'] = $result['value'];
+
+        return null;
+    }
+
+    private function canAccessUser(User $targetUser): bool
+    {
+        $current = $this->getUser();
+        if (!$current instanceof User) {
+            return false;
+        }
+
+        return $this->isGranted('ROLE_ADMIN') || $current->getId() === $targetUser->getId();
+    }
+
+    private function serializeUser(User $user): array
+    {
+        $profileImage = PatientProfileImageResolver::normalizeForApi($user->getProfileImage());
+
+        return [
+            'id' => $user->getId(),
+            'email' => $user->getEmail(),
+            'roles' => $user->getRoles(),
+            'profile_image' => $profileImage,
+            'profile_image_url' => $profileImage,
+            'profileImageUrl' => $profileImage,
+        ];
     }
 }
