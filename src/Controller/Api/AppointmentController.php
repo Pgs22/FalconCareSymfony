@@ -13,14 +13,11 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
-/**
- * Rutas bajo /api/appointment (calendario, CRUD de cita).
- * Para historial por paciente con filtros tipo API Platform, usar GET {@see \App\Controller\Api\AppointmentsApiController} `/api/appointments`.
- */
+
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
-    private const ALLOWED_STATUSES = ['Confirmada', 'En curs', 'Finalitzada', 'Cancelada'];
+    private const ALLOWED_STATUSES = ['Programada', 'Confirmada', 'En curs', 'Finalitzada', 'Cancelada'];
 
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
     public function index(Request $request, AppointmentRepository $repo): JsonResponse 
@@ -38,7 +35,7 @@ final class AppointmentController extends AbstractController
         $result = [];
         foreach ($appointments as $appointment) {
             $reason = $appointment->getConsultationReason() ?? '';
-            $status = $appointment->getStatus() ?? 'Pendent';
+            $status = $appointment->getStatus() ?? 'Programada';
             
             $isUrgency = $appointment->isUrgency() || str_contains(strtolower($reason), 'urgència') || str_contains(strtolower($reason), 'urgencia');
             $isFirstVisit = $appointment->isFirstVisit() || str_contains(strtolower($reason), 'primera visita');
@@ -85,7 +82,15 @@ final class AppointmentController extends AbstractController
             $fecha = new \DateTime($fechaStr);
             $appointments = $repo->findByWeek($fecha);
         } catch (\Exception $e) {
-            return $this->json(['error' => 'Data no vàlida'], 400);
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_DATE',
+                'error' => [
+                    'field' => 'date',
+                    'messageKey' => 'appointment.date.invalid',
+                    'received' => $fechaStr,
+                ],
+            ], Response::HTTP_BAD_REQUEST);
         }
 
         return $this->json($this->serializeAppointments($appointments));
@@ -113,7 +118,13 @@ final class AppointmentController extends AbstractController
         $data = json_decode($request->getContent(), true);
 
         if (!$data) {
-            return $this->json(['errors' => 'JSON mal format o buit'], Response::HTTP_BAD_REQUEST);
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_JSON',
+                'error' => [
+                    'messageKey' => 'request.body.invalid_json',
+                ],
+            ], Response::HTTP_BAD_REQUEST);
         }
 
         $form = $this->createForm(AppointmentType::class, $appointment);
@@ -138,22 +149,34 @@ final class AppointmentController extends AbstractController
                 }
 
                 if ($this->isBoxOccupied($repository, $appointment)) {
-                    return $this->json(['error' => 'Box ocupat'], Response::HTTP_CONFLICT);
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'BOX_OCCUPIED',
+                        'error' => [
+                            'messageKey' => 'appointment.box.occupied',
+                        ],
+                    ], Response::HTTP_CONFLICT);
                 }
 
                 $entityManager->persist($appointment);
                 $entityManager->flush(); 
 
                 return $this->json([
+                    'ok' => true,
+                    'code' => 'APPOINTMENT_CREATED',
+                    'messageKey' => 'appointment.created',
                     'id' => $appointment->getId(),
-                    'message' => 'Cita creada amb èxit'
                 ], Response::HTTP_CREATED);
 
             } catch (\Exception $e) {
                 return $this->json([
-                    'errors' => 'Error de base de dades',
-                    'debug' => $e->getMessage()
-                ], 500);
+                    'ok' => false,
+                    'code' => 'DATABASE_ERROR',
+                    'error' => [
+                        'messageKey' => 'common.database_error',
+                        'details' => $e->getMessage(),
+                    ],
+                ], Response::HTTP_INTERNAL_SERVER_ERROR);
             }
         }
 
@@ -165,9 +188,13 @@ final class AppointmentController extends AbstractController
         }
 
         return $this->json([
-            'errors' => 'Dades invàlides',
-            'debug' => $errors,
-            'received' => $data
+            'ok' => false,
+            'code' => 'VALIDATION_ERROR',
+            'error' => [
+                'messageKey' => 'appointment.validation.failed',
+                'details' => $errors,
+                'received' => $data,
+            ],
         ], Response::HTTP_BAD_REQUEST);
     }
 
@@ -225,7 +252,13 @@ final class AppointmentController extends AbstractController
     {
         $appointment->setStatus('Finalitzada');
         $em->flush();
-        return $this->json(['message' => 'Cita finalitzada']);
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_CLOSED',
+            'messageKey' => 'appointment.closed',
+            'id' => $appointment->getId(),
+            'status' => $appointment->getStatus(),
+        ]);
     }
 
     #[Route('/{id}/status', name: 'app_appointment_update_status', requirements: ['id' => '\d+'], methods: ['PATCH', 'PUT'])]
@@ -283,7 +316,15 @@ final class AppointmentController extends AbstractController
         AppointmentRepository $repository
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
-        if (!$data) return $this->json(['error' => 'JSON invàlid'], 400);
+        if (!$data) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_JSON',
+                'error' => [
+                    'messageKey' => 'request.body.invalid_json',
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
 
         $form = $this->createForm(AppointmentType::class, $appointment);
         $form->submit($data, false);
@@ -291,21 +332,41 @@ final class AppointmentController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             try {
                 if ($this->isBoxOccupied($repository, $appointment)) {
-                    return $this->json(['error' => 'No es pot moure la cita: el Box ja està ocupat'], 409);
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'BOX_OCCUPIED',
+                        'error' => [
+                            'messageKey' => 'appointment.box.occupied',
+                        ],
+                    ], Response::HTTP_CONFLICT);
                 }
 
                 $entityManager->flush();
                 
                 return $this->json([
-                    'status' => 'updated',
+                    'ok' => true,
+                    'code' => 'APPOINTMENT_UPDATED',
+                    'messageKey' => 'appointment.updated',
                     'id' => $appointment->getId(),
-                    'message' => 'Cita actualitzada'
                 ]);
             } catch (\Exception $e) {
-                return $this->json(['error' => 'Error de base de dades', 'debug' => $e->getMessage()], 500);
+                return $this->json([
+                    'ok' => false,
+                    'code' => 'DATABASE_ERROR',
+                    'error' => [
+                        'messageKey' => 'common.database_error',
+                        'details' => $e->getMessage(),
+                    ],
+                ], Response::HTTP_INTERNAL_SERVER_ERROR);
             }
         }
-        return $this->json(['error' => 'Error de validació'], 400);
+        return $this->json([
+            'ok' => false,
+            'code' => 'VALIDATION_ERROR',
+            'error' => [
+                'messageKey' => 'appointment.validation.failed',
+            ],
+        ], Response::HTTP_BAD_REQUEST);
     }
 
     #[Route('/{id}', name: 'app_appointment_delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
@@ -314,6 +375,11 @@ final class AppointmentController extends AbstractController
         $entityManager->remove($appointment);
         $entityManager->flush();
 
-        return $this->json(['message' => 'Cita eliminada correctament']);
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_DELETED',
+            'messageKey' => 'appointment.deleted',
+            'id' => $appointment->getId(),
+        ]);
     }
 }
