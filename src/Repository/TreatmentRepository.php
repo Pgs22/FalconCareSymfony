@@ -16,28 +16,37 @@ class TreatmentRepository extends ServiceEntityRepository
         parent::__construct($registry, Treatment::class);
     }
 
-    //    /**
-    //     * @return Treatment[] Returns an array of Treatment objects
-    //     */
-    //    public function findByExampleField($value): array
-    //    {
-    //        return $this->createQueryBuilder('t')
-    //            ->andWhere('t.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->orderBy('t.id', 'ASC')
-    //            ->setMaxResults(10)
-    //            ->getQuery()
-    //            ->getResult()
-    //        ;
-    //    }
+    /**
+     * Actualiza el estado de un tratamiento a 'Finalitzat' por su ID.
+     */
+    public function markAsFinished(int $treatmentId): int
+    {
+        return $this->createQueryBuilder('t')
+            ->update()
+            ->set('t.status', ':newStatus')
+            ->where('t.id = :id')
+            ->setParameter('newStatus', 'Finalitzat')
+            ->setParameter('id', $treatmentId)
+            ->getQuery()
+            ->execute();
+    }
 
-    //    public function findOneBySomeField($value): ?Treatment
-    //    {
-    //        return $this->createQueryBuilder('t')
-    //            ->andWhere('t.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->getQuery()
-    //            ->getOneOrNullResult()
-    //        ;
-    //    }
+    /**
+     * Obtiene los tratamientos activos de un paciente a través de sus citas.
+     */
+    public function findActiveTreatmentsByPatient(int $patientId): array
+    {
+        return $this->createQueryBuilder('t')
+            ->innerJoin('t.appointments', 'a')
+            ->innerJoin('a.patient', 'p')
+            ->leftJoin('t.pathologies', 'path')
+            ->leftJoin('path.pathology_type', 'pt')
+            ->addSelect('path', 'pt')
+            ->where('p.id = :patientId')
+            ->andWhere('t.status = :status')
+            ->setParameter('patientId', $patientId)
+            ->setParameter('status', 'Actiu')
+            ->getQuery()
+            ->getResult();
+    }
 }
