@@ -20,6 +20,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
+    private const ALLOWED_STATUSES = ['Confirmada', 'En curs', 'Finalitzada', 'Cancelada'];
+
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
     public function index(Request $request, AppointmentRepository $repo): JsonResponse 
     {
@@ -224,6 +226,53 @@ final class AppointmentController extends AbstractController
         $appointment->setStatus('Finalitzada');
         $em->flush();
         return $this->json(['message' => 'Cita finalitzada']);
+    }
+
+    #[Route('/{id}/status', name: 'app_appointment_update_status', requirements: ['id' => '\d+'], methods: ['PATCH', 'PUT'])]
+    public function updateStatus(
+        Request $request,
+        Appointment $appointment,
+        EntityManagerInterface $entityManager
+    ): JsonResponse {
+        $data = json_decode($request->getContent(), true);
+
+        if (!is_array($data) || !isset($data['status'])) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'VALIDATION_ERROR',
+                'error' => [
+                    'field' => 'status',
+                    'messageKey' => 'appointment.status.required',
+                    'allowedStatuses' => self::ALLOWED_STATUSES,
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        $newStatus = trim((string) $data['status']);
+
+        if (!in_array($newStatus, self::ALLOWED_STATUSES, true)) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_STATUS',
+                'error' => [
+                    'field' => 'status',
+                    'messageKey' => 'appointment.status.invalid',
+                    'allowedStatuses' => self::ALLOWED_STATUSES,
+                    'received' => $newStatus,
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        $appointment->setStatus($newStatus);
+        $entityManager->flush();
+
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_STATUS_UPDATED',
+            'messageKey' => 'appointment.status.updated',
+            'id' => $appointment->getId(),
+            'status' => $appointment->getStatus(),
+        ]);
     }
 
     #[Route('/{id}/update', name: 'app_appointment_update', requirements: ['id' => '\d+'], methods: ['POST', 'PUT'])]
