@@ -3,6 +3,7 @@
 namespace App\Controller\Api;
 
 use App\Entity\Appointment;
+use App\Entity\Patient;
 use App\Form\AppointmentType;
 use App\Repository\AppointmentRepository;
 use App\Entity\Odontogram;
@@ -18,6 +19,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 final class AppointmentController extends AbstractController
 {
     private const ALLOWED_STATUSES = ['Programada', 'Confirmada', 'En curs', 'Finalitzada', 'Cancelada'];
+    private const NO_KNOWN_MEDICATION_ALLERGIES = 'Cap coneguda';
 
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
     public function index(Request $request, AppointmentRepository $repo): JsonResponse 
@@ -108,6 +110,24 @@ final class AppointmentController extends AbstractController
         return count($overlaps) > 0;
     }
 
+    private function buildMedicationAllergyAlert(Patient $patient): ?array
+    {
+        $allergies = trim((string) ($patient->getMedicationAllergies() ?? ''));
+
+        if ($allergies === '' || mb_strtolower($allergies) === mb_strtolower(self::NO_KNOWN_MEDICATION_ALLERGIES)) {
+            return null;
+        }
+
+        return [
+            'type' => 'warning',
+            'code' => 'PATIENT_MEDICATION_ALLERGIES',
+            'messageKey' => 'patient.medication_allergies.warning',
+            'patientId' => $patient->getId(),
+            'patientName' => trim(($patient->getFirstName() ?? '') . ' ' . ($patient->getLastName() ?? '')),
+            'medicationAllergies' => $allergies,
+        ];
+    }
+
     #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
     public function new(
         Request $request, 
@@ -161,12 +181,22 @@ final class AppointmentController extends AbstractController
                 $entityManager->persist($appointment);
                 $entityManager->flush(); 
 
-                return $this->json([
+                $response = [
                     'ok' => true,
                     'code' => 'APPOINTMENT_CREATED',
                     'messageKey' => 'appointment.created',
                     'id' => $appointment->getId(),
-                ], Response::HTTP_CREATED);
+                ];
+
+                $patient = $appointment->getPatient();
+                if ($patient !== null) {
+                    $allergyAlert = $this->buildMedicationAllergyAlert($patient);
+                    if ($allergyAlert !== null) {
+                        $response['alerts'] = [$allergyAlert];
+                    }
+                }
+
+                return $this->json($response, Response::HTTP_CREATED);
 
             } catch (\Exception $e) {
                 return $this->json([
