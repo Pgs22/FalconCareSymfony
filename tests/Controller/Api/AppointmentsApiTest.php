@@ -12,6 +12,7 @@ use App\Entity\Treatment;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 final class AppointmentsApiTest extends WebTestCase
@@ -159,5 +160,87 @@ final class AppointmentsApiTest extends WebTestCase
         $ld = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertArrayHasKey('hydra:member', $ld);
         self::assertCount(1, $ld['hydra:member']);
+    }
+
+    public function testCreateAppointmentSetsMissingConsentStatusForFirstVisit(): void
+    {
+        $client = static::createClient();
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $hasher = $client->getContainer()->get(UserPasswordHasherInterface::class);
+
+        $doctorEmail = 'appointments-doctor-first-visit@test.falconcare.local';
+        $doctorUser = $em->getRepository(User::class)->findOneBy(['email' => $doctorEmail]);
+        if ($doctorUser === null) {
+            $doctorUser = new User();
+            $doctorUser->setEmail($doctorEmail);
+            $doctorUser->setPassword($hasher->hashPassword($doctorUser, 'secret123'));
+            $doctorUser->setRoles(['ROLE_DOCTOR']);
+            $em->persist($doctorUser);
+            $em->flush();
+        }
+
+        $box = new Box();
+        $box->setBoxName('ConsentBox');
+        $box->setStatus(true);
+        $box->setCapacity(1);
+        $em->persist($box);
+
+        $doctor = new Doctor();
+        $doctor->setFirstName('Laura');
+        $doctor->setLastNames('Gomez');
+        $doctor->setSpecialty('General');
+        $doctor->setPhone('622222222');
+        $doctor->setEmail('laura-gomez@test.local');
+        $em->persist($doctor);
+
+        $patient = new Patient();
+        $patient->setIdentityDocument('FIRSTVISIT1');
+        $patient->setFirstName('New');
+        $patient->setLastName('Patient');
+        $patient->setPhone('633333333');
+        $patient->setEmail('new-patient@test.local');
+        $patient->setAddress('Addr');
+        $patient->setConsultationReason('Primera visita');
+        $patient->setFamilyHistory('None');
+        $patient->setHealthStatus('Healthy');
+        $patient->setLifestyleHabits('Good');
+        $patient->setMedicationAllergies('Cap coneguda');
+        $patient->setRegistrationDate(new \DateTimeImmutable());
+        $em->persist($patient);
+
+        $em->flush();
+
+        self::assertNull($patient->getLastOdontogramId());
+
+        $client->request('POST', '/api/auth/login', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+            'email' => $doctorEmail,
+            'password' => 'secret123',
+        ], \JSON_THROW_ON_ERROR));
+        self::assertResponseIsSuccessful();
+        $login = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        $headers = [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_AUTHORIZATION' => 'Bearer ' . $login['accessToken'],
+        ];
+
+        $client->request('POST', '/api/appointment/new', [], [], $headers, json_encode([
+            'visitDate' => '2026-04-20',
+            'visitTime' => '10:30',
+            'consultationReason' => 'Primera visita',
+            'observations' => '',
+            'patient' => $patient->getId(),
+            'doctor' => $doctor->getId(),
+            'box' => $box->getId(),
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertTrue($payload['ok']);
+        self::assertArrayHasKey('id', $payload);
+
+        $createdAppointment = $em->getRepository(Appointment::class)->find($payload['id']);
+        self::assertInstanceOf(Appointment::class, $createdAppointment);
+        self::assertSame('Falta Consentiment', $createdAppointment->getStatus());
     }
 }

@@ -18,7 +18,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
-    private const ALLOWED_STATUSES = ['Programada', 'Confirmada', 'En curs', 'Finalitzada', 'Cancelada'];
+    private const ALLOWED_STATUSES = ['Programada', 'Falta Consentiment', 'Confirmada', 'En curs', 'Finalitzada', 'Cancelada'];
     private const NO_KNOWN_MEDICATION_ALLERGIES = 'Cap coneguda';
 
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
@@ -110,6 +110,21 @@ final class AppointmentController extends AbstractController
         return count($overlaps) > 0;
     }
 
+    private function resolveInitialAppointmentStatus(Appointment $appointment): string
+    {
+        $status = trim((string) $appointment->getStatus());
+        if ($status !== '') {
+            return $status;
+        }
+
+        $patient = $appointment->getPatient();
+        if ($patient !== null && $patient->getLastOdontogramId() === null) {
+            return 'Falta Consentiment';
+        }
+
+        return 'Programada';
+    }
+
     private function buildMedicationAllergyAlert(Patient $patient): ?array
     {
         $allergies = trim((string) ($patient->getMedicationAllergies() ?? ''));
@@ -152,12 +167,10 @@ final class AppointmentController extends AbstractController
 
         if ($form->isSubmitted() && $form->isValid()) {
             try {
-                if (!$appointment->getStatus()) {
-                    $appointment->setStatus('Programada'); 
-                }
+                $appointment->setStatus($this->resolveInitialAppointmentStatus($appointment));
 
                 if ($appointment->getObservations() === null) {
-                    $appointment->setObservations(''); 
+                    $appointment->setObservations('');
                 }
 
                 if (!$appointment->getConsultationReason()) {
@@ -165,7 +178,7 @@ final class AppointmentController extends AbstractController
                 }
 
                 if (isset($data['durationMinutes'])) {
-                    $appointment->setDurationMinutes((int)$data['durationMinutes']);
+                    $appointment->setDurationMinutes((int) $data['durationMinutes']);
                 }
 
                 if ($this->isBoxOccupied($repository, $appointment)) {
@@ -179,7 +192,7 @@ final class AppointmentController extends AbstractController
                 }
 
                 $entityManager->persist($appointment);
-                $entityManager->flush(); 
+                $entityManager->flush();
 
                 $response = [
                     'ok' => true,
@@ -197,7 +210,6 @@ final class AppointmentController extends AbstractController
                 }
 
                 return $this->json($response, Response::HTTP_CREATED);
-
             } catch (\Exception $e) {
                 return $this->json([
                     'ok' => false,

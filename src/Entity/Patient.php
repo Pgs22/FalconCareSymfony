@@ -11,6 +11,11 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: PatientRepository::class)]
 class Patient
 {
+    public const ALLERGY_PENICILLIN = 1;
+    public const ALLERGY_LATEX = 2;
+    public const ALLERGY_ANESTHESIA = 4;
+    public const ALLERGY_NSAIDS = 8;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -54,6 +59,9 @@ class Patient
 
     #[ORM\Column(type: Types::TEXT)]
     private ?string $medicationAllergies = null;
+
+    #[ORM\Column(name: 'allergies_bitmask', type: Types::INTEGER, options: ['default' => 0])]
+    private int $allergiesBitmask = 0;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $profileImage = null;
@@ -249,6 +257,93 @@ class Patient
         $this->medicationAllergies = $medicationAllergies;
 
         return $this;
+    }
+
+    public function getAllergiesBitmask(): int
+    {
+        return $this->allergiesBitmask;
+    }
+
+    public function setAllergiesBitmask(int $allergiesBitmask): static
+    {
+        $this->allergiesBitmask = $allergiesBitmask;
+
+        return $this;
+    }
+
+    public function hasAllergy(int $allergy): bool
+    {
+        return ($this->allergiesBitmask & $allergy) === $allergy;
+    }
+
+    public function addAllergy(int $allergy): static
+    {
+        $this->allergiesBitmask |= $allergy;
+
+        return $this;
+    }
+
+    public function removeAllergy(int $allergy): static
+    {
+        $this->allergiesBitmask &= ~$allergy;
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function getSelectedAllergies(): array
+    {
+        $selectedAllergies = [];
+
+        foreach (self::getAllergyCatalog() as $allergy => $label) {
+            if ($this->hasAllergy($allergy)) {
+                $selectedAllergies[] = $allergy;
+            }
+        }
+
+        return $selectedAllergies;
+    }
+
+    /**
+     * @param array<int, int|string> $selectedAllergies
+     */
+    public function setSelectedAllergies(array $selectedAllergies): static
+    {
+        $this->allergiesBitmask = self::buildAllergiesBitmask($selectedAllergies);
+
+        return $this;
+    }
+
+    /**
+     * @param array<int, int|string> $selectedAllergies
+     */
+    public static function buildAllergiesBitmask(array $selectedAllergies): int
+    {
+        $bitmask = 0;
+
+        foreach ($selectedAllergies as $allergy) {
+            $flag = (int) $allergy;
+            if (array_key_exists($flag, self::getAllergyCatalog())) {
+                $bitmask |= $flag;
+            }
+        }
+
+        return $bitmask;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function getAllergyCatalog(): array
+    {
+        return [
+            self::ALLERGY_PENICILLIN => 'Penicillin',
+            self::ALLERGY_LATEX => 'Latex',
+            self::ALLERGY_ANESTHESIA => 'Anesthesia',
+            self::ALLERGY_NSAIDS => 'NSAIDs',
+        ];
     }
 
     public function getProfileImage(): ?string
