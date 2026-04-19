@@ -3,6 +3,7 @@
 namespace App\Controller\Api;
 
 use App\Entity\Appointment;
+use App\Entity\Patient;
 use App\Form\AppointmentType;
 use App\Repository\AppointmentRepository;
 use App\Entity\Odontogram;
@@ -13,13 +14,14 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
-/**
- * Rutas bajo /api/appointment (calendario, CRUD de cita).
- * Para historial por paciente con filtros tipo API Platform, usar GET {@see \App\Controller\Api\AppointmentsApiController} `/api/appointments`.
- */
+
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
+    private const ALLOWED_STATUSES = ['Confirmada', 'En curs', 'Cancel·lada'];
+    private const ALLOWED_CLEANING_MINUTES = [5, 10, 15];
+    private const NO_KNOWN_MEDICATION_ALLERGIES = 'Cap coneguda';
+
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
     public function index(Request $request, AppointmentRepository $repo): JsonResponse 
     {
@@ -36,7 +38,7 @@ final class AppointmentController extends AbstractController
         $result = [];
         foreach ($appointments as $appointment) {
             $reason = $appointment->getConsultationReason() ?? '';
-            $status = $appointment->getStatus() ?? 'Pendent';
+            $status = $appointment->getStatus() ?? 'Programada';
             
             $isUrgency = $appointment->isUrgency() || str_contains(strtolower($reason), 'urgència') || str_contains(strtolower($reason), 'urgencia');
             $isFirstVisit = $appointment->isFirstVisit() || str_contains(strtolower($reason), 'primera visita');
@@ -55,8 +57,10 @@ final class AppointmentController extends AbstractController
                 'id' => $appointment->getId(),
                 'time' => $appointment->getVisitTime() ? $appointment->getVisitTime()->format('H:i') : '--:--',
                 'duration' => $appointment->getDurationMinutes() ?? 30,
-                'cleaningTime' => 5,
-                'totalBlockTime' => ($appointment->getDurationMinutes() ?? 30) + 5,
+                'cleaningTime' => $appointment->getCleaningMinutes(),
+                'cleaning_time' => $appointment->getCleaningMinutes(),
+                'cleaningMinutes' => $appointment->getCleaningMinutes(),
+                'totalBlockTime' => $appointment->getTotalDurationWithCleaning(),
                 'patientName' => $appointment->getPatient() 
                     ? $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName() 
                     : 'Sense Pacient',
@@ -83,7 +87,15 @@ final class AppointmentController extends AbstractController
             $fecha = new \DateTime($fechaStr);
             $appointments = $repo->findByWeek($fecha);
         } catch (\Exception $e) {
-            return $this->json(['error' => 'Data no vàlida'], 400);
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_DATE',
+                'error' => [
+                    'field' => 'date',
+                    'messageKey' => 'appointment.date.invalid',
+                    'received' => $fechaStr,
+                ],
+            ], Response::HTTP_BAD_REQUEST);
         }
 
         return $this->json($this->serializeAppointments($appointments));
@@ -96,9 +108,78 @@ final class AppointmentController extends AbstractController
             $newApp->getVisitTime(),
             (int)($newApp->getDurationMinutes() ?? 15),
             $newApp->getBox()?->getId(),
-            $newApp->getId()
+            $newApp->getId(),
+            $newApp->getCleaningMinutes()
         );
         return count($overlaps) > 0;
+    }
+
+    private function resolveDurationMinutes(array $data): ?int
+    {
+        if (isset($data['durationMinutes'])) {
+            return (int) $data['durationMinutes'];
+        }
+
+        if (isset($data['duration'])) {
+            return (int) $data['duration'];
+        }
+
+        return null;
+    }
+
+    private function resolveCleaningMinutes(array $data): ?int
+    {
+        if (isset($data['cleaningMinutes'])) {
+            return (int) $data['cleaningMinutes'];
+        }
+
+        if (isset($data['cleaningTime'])) {
+            return (int) $data['cleaningTime'];
+        }
+
+        if (isset($data['cleaning_time'])) {
+            return (int) $data['cleaning_time'];
+        }
+
+        return null;
+    }
+
+    private function isAllowedCleaningMinutes(int $cleaningMinutes): bool
+    {
+        return in_array($cleaningMinutes, self::ALLOWED_CLEANING_MINUTES, true);
+    }
+
+    private function resolveInitialAppointmentStatus(Appointment $appointment): string
+    {
+        $status = trim((string) $appointment->getStatus());
+        if ($status !== '') {
+            return $status;
+        }
+
+        $patient = $appointment->getPatient();
+        if ($patient !== null && $patient->getLastOdontogramId() === null) {
+            return 'Falta Consentiment';
+        }
+
+        return 'Programada';
+    }
+
+    private function buildMedicationAllergyAlert(Patient $patient): ?array
+    {
+        $allergies = trim((string) ($patient->getMedicationAllergies() ?? ''));
+
+        if ($allergies === '' || mb_strtolower($allergies) === mb_strtolower(self::NO_KNOWN_MEDICATION_ALLERGIES)) {
+            return null;
+        }
+
+        return [
+            'type' => 'warning',
+            'code' => 'PATIENT_MEDICATION_ALLERGIES',
+            'messageKey' => 'patient.medication_allergies.warning',
+            'patientId' => $patient->getId(),
+            'patientName' => trim(($patient->getFirstName() ?? '') . ' ' . ($patient->getLastName() ?? '')),
+            'medicationAllergies' => $allergies,
+        ];
     }
 
     #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
@@ -111,7 +192,13 @@ final class AppointmentController extends AbstractController
         $data = json_decode($request->getContent(), true);
 
         if (!$data) {
-            return $this->json(['errors' => 'JSON mal format o buit'], Response::HTTP_BAD_REQUEST);
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_JSON',
+                'error' => [
+                    'messageKey' => 'request.body.invalid_json',
+                ],
+            ], Response::HTTP_BAD_REQUEST);
         }
 
         $form = $this->createForm(AppointmentType::class, $appointment);
@@ -119,39 +206,77 @@ final class AppointmentController extends AbstractController
 
         if ($form->isSubmitted() && $form->isValid()) {
             try {
-                if (!$appointment->getStatus()) {
-                    $appointment->setStatus('Programada'); 
-                }
+                $appointment->setStatus($this->resolveInitialAppointmentStatus($appointment));
 
                 if ($appointment->getObservations() === null) {
-                    $appointment->setObservations(''); 
+                    $appointment->setObservations('');
                 }
 
                 if (!$appointment->getConsultationReason()) {
                     $appointment->setConsultationReason('Consulta general');
                 }
 
-                if (isset($data['durationMinutes'])) {
-                    $appointment->setDurationMinutes((int)$data['durationMinutes']);
+                $durationMinutes = $this->resolveDurationMinutes($data);
+                if ($durationMinutes !== null) {
+                    $appointment->setDurationMinutes($durationMinutes);
+                }
+
+                $cleaningMinutes = $this->resolveCleaningMinutes($data);
+                if ($cleaningMinutes !== null) {
+                    if (!$this->isAllowedCleaningMinutes($cleaningMinutes)) {
+                        return $this->json([
+                            'ok' => false,
+                            'code' => 'VALIDATION_ERROR',
+                            'error' => [
+                                'field' => 'cleaningMinutes',
+                                'messageKey' => 'appointment.cleaning_minutes.invalid',
+                                'allowedValues' => self::ALLOWED_CLEANING_MINUTES,
+                                'received' => $cleaningMinutes,
+                            ],
+                        ], Response::HTTP_BAD_REQUEST);
+                    }
+
+                    $appointment->setCleaningMinutes($cleaningMinutes);
                 }
 
                 if ($this->isBoxOccupied($repository, $appointment)) {
-                    return $this->json(['error' => 'Box ocupat'], Response::HTTP_CONFLICT);
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'BOX_OCCUPIED',
+                        'error' => [
+                            'messageKey' => 'appointment.box.occupied',
+                        ],
+                    ], Response::HTTP_CONFLICT);
                 }
 
                 $entityManager->persist($appointment);
-                $entityManager->flush(); 
+                $entityManager->flush();
 
-                return $this->json([
+                $response = [
+                    'ok' => true,
+                    'code' => 'APPOINTMENT_CREATED',
+                    'messageKey' => 'appointment.created',
                     'id' => $appointment->getId(),
-                    'message' => 'Cita creada amb èxit'
-                ], Response::HTTP_CREATED);
+                ];
 
+                $patient = $appointment->getPatient();
+                if ($patient !== null) {
+                    $allergyAlert = $this->buildMedicationAllergyAlert($patient);
+                    if ($allergyAlert !== null) {
+                        $response['alerts'] = [$allergyAlert];
+                    }
+                }
+
+                return $this->json($response, Response::HTTP_CREATED);
             } catch (\Exception $e) {
                 return $this->json([
-                    'errors' => 'Error de base de dades',
-                    'debug' => $e->getMessage()
-                ], 500);
+                    'ok' => false,
+                    'code' => 'DATABASE_ERROR',
+                    'error' => [
+                        'messageKey' => 'common.database_error',
+                        'details' => $e->getMessage(),
+                    ],
+                ], Response::HTTP_INTERNAL_SERVER_ERROR);
             }
         }
 
@@ -163,9 +288,13 @@ final class AppointmentController extends AbstractController
         }
 
         return $this->json([
-            'errors' => 'Dades invàlides',
-            'debug' => $errors,
-            'received' => $data
+            'ok' => false,
+            'code' => 'VALIDATION_ERROR',
+            'error' => [
+                'messageKey' => 'appointment.validation.failed',
+                'details' => $errors,
+                'received' => $data,
+            ],
         ], Response::HTTP_BAD_REQUEST);
     }
 
@@ -223,7 +352,70 @@ final class AppointmentController extends AbstractController
     {
         $appointment->setStatus('Finalitzada');
         $em->flush();
-        return $this->json(['message' => 'Cita finalitzada']);
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_CLOSED',
+            'messageKey' => 'appointment.closed',
+            'id' => $appointment->getId(),
+            'status' => $appointment->getStatus(),
+        ]);
+    }
+
+    #[Route('/{id}/status', name: 'app_appointment_update_status', requirements: ['id' => '\d+'], methods: ['PATCH', 'PUT'])]
+    public function updateStatus(
+        Request $request,
+        Appointment $appointment,
+        EntityManagerInterface $entityManager
+    ): JsonResponse {
+        $payload = json_decode($request->getContent(), true);
+        $newStatus = '';
+
+        if (is_string($payload)) {
+            $newStatus = trim($payload);
+        } elseif (is_array($payload)) {
+            if (isset($payload['status'])) {
+                $newStatus = trim((string) $payload['status']);
+            } elseif (isset($payload['stateName'])) {
+                $newStatus = trim((string) $payload['stateName']);
+            }
+        }
+
+        if ($newStatus === '') {
+            return $this->json([
+                'ok' => false,
+                'code' => 'VALIDATION_ERROR',
+                'error' => [
+                    'field' => 'status',
+                    'messageKey' => 'appointment.status.required_string',
+                    'expected' => 'string',
+                    'allowedStatuses' => self::ALLOWED_STATUSES,
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        if (!in_array($newStatus, self::ALLOWED_STATUSES, true)) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_STATUS',
+                'error' => [
+                    'field' => 'status',
+                    'messageKey' => 'appointment.status.invalid',
+                    'allowedStatuses' => self::ALLOWED_STATUSES,
+                    'received' => $newStatus,
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        $appointment->setStatus($newStatus);
+        $entityManager->flush();
+
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_STATUS_UPDATED',
+            'messageKey' => 'appointment.status.updated',
+            'id' => $appointment->getId(),
+            'status' => $appointment->getStatus(),
+        ]);
     }
 
     #[Route('/{id}/update', name: 'app_appointment_update', requirements: ['id' => '\d+'], methods: ['POST', 'PUT'])]
@@ -234,37 +426,94 @@ final class AppointmentController extends AbstractController
         AppointmentRepository $repository
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
-        if (!$data) return $this->json(['error' => 'JSON invàlid'], 400);
+        if (!$data) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_JSON',
+                'error' => [
+                    'messageKey' => 'request.body.invalid_json',
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
 
         $form = $this->createForm(AppointmentType::class, $appointment);
         $form->submit($data, false);
 
         if ($form->isSubmitted() && $form->isValid()) {
             try {
+                $durationMinutes = $this->resolveDurationMinutes($data);
+                if ($durationMinutes !== null) {
+                    $appointment->setDurationMinutes($durationMinutes);
+                }
+
+                $cleaningMinutes = $this->resolveCleaningMinutes($data);
+                if ($cleaningMinutes !== null) {
+                    if (!$this->isAllowedCleaningMinutes($cleaningMinutes)) {
+                        return $this->json([
+                            'ok' => false,
+                            'code' => 'VALIDATION_ERROR',
+                            'error' => [
+                                'field' => 'cleaningMinutes',
+                                'messageKey' => 'appointment.cleaning_minutes.invalid',
+                                'allowedValues' => self::ALLOWED_CLEANING_MINUTES,
+                                'received' => $cleaningMinutes,
+                            ],
+                        ], Response::HTTP_BAD_REQUEST);
+                    }
+
+                    $appointment->setCleaningMinutes($cleaningMinutes);
+                }
+
                 if ($this->isBoxOccupied($repository, $appointment)) {
-                    return $this->json(['error' => 'No es pot moure la cita: el Box ja està ocupat'], 409);
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'BOX_OCCUPIED',
+                        'error' => [
+                            'messageKey' => 'appointment.box.occupied',
+                        ],
+                    ], Response::HTTP_CONFLICT);
                 }
 
                 $entityManager->flush();
                 
                 return $this->json([
-                    'status' => 'updated',
+                    'ok' => true,
+                    'code' => 'APPOINTMENT_UPDATED',
+                    'messageKey' => 'appointment.updated',
                     'id' => $appointment->getId(),
-                    'message' => 'Cita actualitzada'
                 ]);
             } catch (\Exception $e) {
-                return $this->json(['error' => 'Error de base de dades', 'debug' => $e->getMessage()], 500);
+                return $this->json([
+                    'ok' => false,
+                    'code' => 'DATABASE_ERROR',
+                    'error' => [
+                        'messageKey' => 'common.database_error',
+                        'details' => $e->getMessage(),
+                    ],
+                ], Response::HTTP_INTERNAL_SERVER_ERROR);
             }
         }
-        return $this->json(['error' => 'Error de validació'], 400);
+        return $this->json([
+            'ok' => false,
+            'code' => 'VALIDATION_ERROR',
+            'error' => [
+                'messageKey' => 'appointment.validation.failed',
+            ],
+        ], Response::HTTP_BAD_REQUEST);
     }
 
     #[Route('/{id}', name: 'app_appointment_delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
+    #[Route('/{id}/delete', name: 'app_appointment_delete_legacy', requirements: ['id' => '\d+'], methods: ['DELETE', 'POST'])]
     public function delete(Appointment $appointment, EntityManagerInterface $entityManager): JsonResponse
     {
         $entityManager->remove($appointment);
         $entityManager->flush();
 
-        return $this->json(['message' => 'Cita eliminada correctament']);
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_DELETED',
+            'messageKey' => 'appointment.deleted',
+            'id' => $appointment->getId(),
+        ]);
     }
 }

@@ -23,6 +23,7 @@ use Symfony\Component\Routing\Attribute\Route;
 /**
  * JSON paciente:
  * - Alergias: `medicationAllergies` canónico; `medication_allergies` duplicado; POST/PUT aceptan ambas (deben coincidir si vienen las dos).
+ * - Allergy bitmask: `allergiesBitmask` and `selectedAllergies`.
  * - Imagen perfil: `profile_image` canónico; `profile_image_url` y `profileImage` compat; prioridad de entrada: profile_image > profile_image_url > profileImage.
  */
 #[Route('/api/patients')]
@@ -153,7 +154,7 @@ final class PatientApiController extends AbstractController
         security: [],
         requestBody: new OA\RequestBody(
             required: true,
-            description: 'Include medicationAllergies and/or medication_allergies (same value if both). GET responses expose both keys; medicationAllergies is the canonical field.',
+            description: 'Include medicationAllergies and/or medication_allergies (same value if both). Optional allergy bitmask input: allergiesBitmask or selectedAllergies. GET responses expose both allergy text keys and the bitmask fields.',
             content: new OA\JsonContent(type: 'object')
         ),
         responses: [
@@ -182,6 +183,8 @@ final class PatientApiController extends AbstractController
             return $this->json(['message' => $allergiesResolved['message']], Response::HTTP_BAD_REQUEST);
         }
 
+        $allergiesBitmask = $this->resolveAllergiesBitmask($data);
+
         $identityDocument = (string) $data['identityDocument'];
         if ($repo->findOneByIdentityDocument($identityDocument)) {
             return $this->json(['message' => 'Patient already exists'], Response::HTTP_BAD_REQUEST);
@@ -205,6 +208,7 @@ final class PatientApiController extends AbstractController
         $patient->setHealthStatus((string) $data['healthStatus']);
         $patient->setLifestyleHabits((string) $data['lifestyleHabits']);
         $patient->setMedicationAllergies($allergiesResolved['value']);
+        $patient->setAllergiesBitmask($allergiesBitmask);
 
         if (!empty($data['registrationDate'])) {
             try {
@@ -249,7 +253,7 @@ final class PatientApiController extends AbstractController
         parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
         requestBody: new OA\RequestBody(
             required: true,
-            description: 'Partial JSON: only include fields to update. profile_image: data URL or null to clear. Allergies: medicationAllergies and/or medication_allergies (must match if both sent). Requires ROLE_DOCTOR, ROLE_STAFF, or ROLE_ADMIN.',
+            description: 'Partial JSON: only include fields to update. profile_image: data URL or null to clear. Allergies: medicationAllergies and/or medication_allergies (must match if both sent). Bitmask: allergiesBitmask or selectedAllergies. Requires ROLE_DOCTOR, ROLE_STAFF, or ROLE_ADMIN.',
             content: new OA\JsonContent(type: 'object')
         ),
         responses: [
@@ -314,6 +318,13 @@ final class PatientApiController extends AbstractController
                 return $this->json(['message' => $allergiesUpdate['error']], Response::HTTP_BAD_REQUEST);
             }
             $patient->setMedicationAllergies($allergiesUpdate['value']);
+        }
+
+        if (
+            array_key_exists('allergiesBitmask', $data)
+            || array_key_exists('selectedAllergies', $data)
+        ) {
+            $patient->setAllergiesBitmask($this->resolveAllergiesBitmask($data));
         }
 
         $profilePick = PatientProfileImageResolver::pickFromArray($data);
@@ -381,11 +392,29 @@ final class PatientApiController extends AbstractController
             'registrationDate' => $patient->getRegistrationDate()?->format(DATE_ATOM),
             'medicationAllergies' => $patient->getMedicationAllergies(),
             'medication_allergies' => $patient->getMedicationAllergies(),
+            'allergiesBitmask' => $patient->getAllergiesBitmask(),
+            'selectedAllergies' => $patient->getSelectedAllergies(),
             'profile_image' => $profile,
             'profile_image_url' => $profile,
             'profileImage' => $profile,
             'profileImageUrl' => $profile,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function resolveAllergiesBitmask(array $data): int
+    {
+        if (array_key_exists('selectedAllergies', $data) && is_array($data['selectedAllergies'])) {
+            return Patient::buildAllergiesBitmask($data['selectedAllergies']);
+        }
+
+        if (array_key_exists('allergiesBitmask', $data)) {
+            return (int) $data['allergiesBitmask'];
+        }
+
+        return 0;
     }
 }
 

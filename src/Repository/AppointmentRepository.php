@@ -43,7 +43,7 @@ class AppointmentRepository extends ServiceEntityRepository
     }
 
 
-    public function findOverlappingAppointments($date, $startTime, int $duration, $boxId, $excludeId = null): array 
+    public function findOverlappingAppointments($date, $startTime, int $duration, $boxId, $excludeId = null, ?int $cleaningMinutes = null): array 
     {
         if ($startTime instanceof \DateTimeInterface) {
             $start = \DateTimeImmutable::createFromInterface($startTime);
@@ -51,7 +51,7 @@ class AppointmentRepository extends ServiceEntityRepository
             $start = new \DateTimeImmutable($startTime ?? 'now');
         }
 
-        $totalDuration = $duration + Appointment::CLEANING_TIME;
+        $totalDuration = $duration + max(0, (int) ($cleaningMinutes ?? Appointment::DEFAULT_CLEANING_MINUTES));
         $endTime = $start->modify("+" . $totalDuration . " minutes");
 
         $dateParam = ($date instanceof \DateTimeInterface) ? $date->format('Y-m-d') : $date;
