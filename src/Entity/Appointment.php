@@ -11,7 +11,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: AppointmentRepository::class)]
 class Appointment
 {
-    public const CLEANING_TIME = 5;
+    public const DEFAULT_CLEANING_MINUTES = 5;
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -58,9 +58,11 @@ class Appointment
     #[ORM\Column]
     private ?int $durationMinutes = null;
 
+    private int $cleaningMinutes = self::DEFAULT_CLEANING_MINUTES;
+
     public function getTotalDurationWithCleaning(): int
     {
-        return ($this->getDurationMinutes() ?? 15) + self::CLEANING_TIME;
+        return ($this->getDurationMinutes() ?? 15) + $this->getCleaningMinutes();
     }
 
     public function __construct()
@@ -223,6 +225,18 @@ class Appointment
     public function setDurationMinutes(int $durationMinutes): static
     {
         $this->durationMinutes = $durationMinutes;
+
+        return $this;
+    }
+
+    public function getCleaningMinutes(): int
+    {
+        return $this->cleaningMinutes;
+    }
+
+    public function setCleaningMinutes(int $cleaningMinutes): static
+    {
+        $this->cleaningMinutes = max(0, $cleaningMinutes);
 
         return $this;
     }

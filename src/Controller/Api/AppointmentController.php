@@ -19,6 +19,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 final class AppointmentController extends AbstractController
 {
     private const ALLOWED_STATUSES = ['Confirmada', 'En curs', 'Cancel·lada'];
+    private const ALLOWED_CLEANING_MINUTES = [5, 10, 15];
     private const NO_KNOWN_MEDICATION_ALLERGIES = 'Cap coneguda';
 
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
@@ -56,8 +57,10 @@ final class AppointmentController extends AbstractController
                 'id' => $appointment->getId(),
                 'time' => $appointment->getVisitTime() ? $appointment->getVisitTime()->format('H:i') : '--:--',
                 'duration' => $appointment->getDurationMinutes() ?? 30,
-                'cleaningTime' => 5,
-                'totalBlockTime' => ($appointment->getDurationMinutes() ?? 30) + 5,
+                'cleaningTime' => $appointment->getCleaningMinutes(),
+                'cleaning_time' => $appointment->getCleaningMinutes(),
+                'cleaningMinutes' => $appointment->getCleaningMinutes(),
+                'totalBlockTime' => $appointment->getTotalDurationWithCleaning(),
                 'patientName' => $appointment->getPatient() 
                     ? $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName() 
                     : 'Sense Pacient',
@@ -105,9 +108,45 @@ final class AppointmentController extends AbstractController
             $newApp->getVisitTime(),
             (int)($newApp->getDurationMinutes() ?? 15),
             $newApp->getBox()?->getId(),
-            $newApp->getId()
+            $newApp->getId(),
+            $newApp->getCleaningMinutes()
         );
         return count($overlaps) > 0;
+    }
+
+    private function resolveDurationMinutes(array $data): ?int
+    {
+        if (isset($data['durationMinutes'])) {
+            return (int) $data['durationMinutes'];
+        }
+
+        if (isset($data['duration'])) {
+            return (int) $data['duration'];
+        }
+
+        return null;
+    }
+
+    private function resolveCleaningMinutes(array $data): ?int
+    {
+        if (isset($data['cleaningMinutes'])) {
+            return (int) $data['cleaningMinutes'];
+        }
+
+        if (isset($data['cleaningTime'])) {
+            return (int) $data['cleaningTime'];
+        }
+
+        if (isset($data['cleaning_time'])) {
+            return (int) $data['cleaning_time'];
+        }
+
+        return null;
+    }
+
+    private function isAllowedCleaningMinutes(int $cleaningMinutes): bool
+    {
+        return in_array($cleaningMinutes, self::ALLOWED_CLEANING_MINUTES, true);
     }
 
     private function resolveInitialAppointmentStatus(Appointment $appointment): string
@@ -177,8 +216,27 @@ final class AppointmentController extends AbstractController
                     $appointment->setConsultationReason('Consulta general');
                 }
 
-                if (isset($data['durationMinutes'])) {
-                    $appointment->setDurationMinutes((int) $data['durationMinutes']);
+                $durationMinutes = $this->resolveDurationMinutes($data);
+                if ($durationMinutes !== null) {
+                    $appointment->setDurationMinutes($durationMinutes);
+                }
+
+                $cleaningMinutes = $this->resolveCleaningMinutes($data);
+                if ($cleaningMinutes !== null) {
+                    if (!$this->isAllowedCleaningMinutes($cleaningMinutes)) {
+                        return $this->json([
+                            'ok' => false,
+                            'code' => 'VALIDATION_ERROR',
+                            'error' => [
+                                'field' => 'cleaningMinutes',
+                                'messageKey' => 'appointment.cleaning_minutes.invalid',
+                                'allowedValues' => self::ALLOWED_CLEANING_MINUTES,
+                                'received' => $cleaningMinutes,
+                            ],
+                        ], Response::HTTP_BAD_REQUEST);
+                    }
+
+                    $appointment->setCleaningMinutes($cleaningMinutes);
                 }
 
                 if ($this->isBoxOccupied($repository, $appointment)) {
@@ -383,8 +441,27 @@ final class AppointmentController extends AbstractController
 
         if ($form->isSubmitted() && $form->isValid()) {
             try {
-                if (isset($data['durationMinutes'])) {
-                    $appointment->setDurationMinutes((int) $data['durationMinutes']);
+                $durationMinutes = $this->resolveDurationMinutes($data);
+                if ($durationMinutes !== null) {
+                    $appointment->setDurationMinutes($durationMinutes);
+                }
+
+                $cleaningMinutes = $this->resolveCleaningMinutes($data);
+                if ($cleaningMinutes !== null) {
+                    if (!$this->isAllowedCleaningMinutes($cleaningMinutes)) {
+                        return $this->json([
+                            'ok' => false,
+                            'code' => 'VALIDATION_ERROR',
+                            'error' => [
+                                'field' => 'cleaningMinutes',
+                                'messageKey' => 'appointment.cleaning_minutes.invalid',
+                                'allowedValues' => self::ALLOWED_CLEANING_MINUTES,
+                                'received' => $cleaningMinutes,
+                            ],
+                        ], Response::HTTP_BAD_REQUEST);
+                    }
+
+                    $appointment->setCleaningMinutes($cleaningMinutes);
                 }
 
                 if ($this->isBoxOccupied($repository, $appointment)) {
