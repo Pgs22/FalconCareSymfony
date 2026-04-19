@@ -18,7 +18,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
-    private const ALLOWED_STATUSES = ['Programada', 'Falta Consentiment', 'Confirmada', 'En curs', 'Finalitzada', 'Cancelada'];
+    private const ALLOWED_STATUSES = ['Confirmada', 'En curs', 'Cancel·lada'];
     private const NO_KNOWN_MEDICATION_ALLERGIES = 'Cap coneguda';
 
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
@@ -309,21 +309,31 @@ final class AppointmentController extends AbstractController
         Appointment $appointment,
         EntityManagerInterface $entityManager
     ): JsonResponse {
-        $data = json_decode($request->getContent(), true);
+        $payload = json_decode($request->getContent(), true);
+        $newStatus = '';
 
-        if (!is_array($data) || !isset($data['status'])) {
+        if (is_string($payload)) {
+            $newStatus = trim($payload);
+        } elseif (is_array($payload)) {
+            if (isset($payload['status'])) {
+                $newStatus = trim((string) $payload['status']);
+            } elseif (isset($payload['stateName'])) {
+                $newStatus = trim((string) $payload['stateName']);
+            }
+        }
+
+        if ($newStatus === '') {
             return $this->json([
                 'ok' => false,
                 'code' => 'VALIDATION_ERROR',
                 'error' => [
                     'field' => 'status',
-                    'messageKey' => 'appointment.status.required',
+                    'messageKey' => 'appointment.status.required_string',
+                    'expected' => 'string',
                     'allowedStatuses' => self::ALLOWED_STATUSES,
                 ],
             ], Response::HTTP_BAD_REQUEST);
         }
-
-        $newStatus = trim((string) $data['status']);
 
         if (!in_array($newStatus, self::ALLOWED_STATUSES, true)) {
             return $this->json([
@@ -373,6 +383,10 @@ final class AppointmentController extends AbstractController
 
         if ($form->isSubmitted() && $form->isValid()) {
             try {
+                if (isset($data['durationMinutes'])) {
+                    $appointment->setDurationMinutes((int) $data['durationMinutes']);
+                }
+
                 if ($this->isBoxOccupied($repository, $appointment)) {
                     return $this->json([
                         'ok' => false,
