@@ -190,7 +190,6 @@ final class AppointmentController extends AbstractController
     }
 
     #[Route('/create', name: 'app_appointment_create', methods: ['POST'])]
-    #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
     public function create(
         Request $request, 
         EntityManagerInterface $entityManager, 
@@ -209,8 +208,43 @@ final class AppointmentController extends AbstractController
             ], Response::HTTP_BAD_REQUEST);
         }
 
+        if (array_key_exists('visitDate', $data) && ($data['visitDate'] === null || trim((string) $data['visitDate']) === '')) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'VALIDATION_ERROR',
+                'error' => [
+                    'field' => 'visitDate',
+                    'messageKey' => 'appointment.visit_date.required',
+                    'received' => $data['visitDate'],
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        if (array_key_exists('visitTime', $data) && ($data['visitTime'] === null || trim((string) $data['visitTime']) === '')) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'VALIDATION_ERROR',
+                'error' => [
+                    'field' => 'visitTime',
+                    'messageKey' => 'appointment.visit_time.required',
+                    'received' => $data['visitTime'],
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
         $form = $this->createForm(AppointmentType::class, $appointment);
-        $form->submit($data, false); 
+        try {
+            $form->submit($data, false);
+        } catch (\Throwable $e) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'VALIDATION_ERROR',
+                'error' => [
+                    'messageKey' => 'appointment.validation.invalid_payload',
+                    'details' => $e->getMessage(),
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
 
         if ($form->isSubmitted() && $form->isValid()) {
             try {
@@ -334,7 +368,6 @@ final class AppointmentController extends AbstractController
     }
 
     #[Route('/{id}', name: 'app_appointment_read', requirements: ['id' => '\d+'], methods: ['GET'])]
-    #[Route('/{id}', name: 'app_appointment_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function read(Appointment $appointment): JsonResponse
     {
         return $this->json([

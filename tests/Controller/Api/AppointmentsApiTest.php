@@ -224,7 +224,7 @@ final class AppointmentsApiTest extends WebTestCase
             'HTTP_AUTHORIZATION' => 'Bearer ' . $login['accessToken'],
         ];
 
-        $client->request('POST', '/api/appointment/new', [], [], $headers, json_encode([
+        $client->request('POST', '/api/appointment/create', [], [], $headers, json_encode([
             'visitDate' => '2026-04-20',
             'visitTime' => '10:30',
             'consultationReason' => 'Primera visita',
