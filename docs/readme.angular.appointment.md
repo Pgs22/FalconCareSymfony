@@ -1,124 +1,259 @@
-# README Angular - Integracion de Appointment API
+# README Angular - Estados de Cita (Appointment)
 
-Guia de contrato backend para Angular sobre citas.
-Base route del controlador: `/api/appointment`.
+Guia para frontend Angular sobre el manejo de estados de cita con el backend.
+Base route: `/api/appointment`.
 
-## 1) Endpoints principales
+## 1) Estados oficiales permitidos
 
-- `GET /api/appointment/index?date=YYYY-MM-DD`
-- `GET /api/appointment/weekly?date=YYYY-MM-DD`
-- `POST /api/appointment/new`
-- `PUT /api/appointment/{id}/update`
-- `POST /api/appointment/{id}/update`
-- `PATCH /api/appointment/{id}/status`
-- `PUT /api/appointment/{id}/status`
-- `GET /api/appointment/{id}`
-- `POST /api/appointment/{id}/close`
-- `DELETE /api/appointment/{id}`
-- `DELETE /api/appointment/{id}/delete` (legacy)
-- `POST /api/appointment/{id}/delete` (legacy)
+Estos son los estados validos en backend:
 
-## 2) Guardar cita (create/update)
-
-En create y update se aceptan:
-
-- Duracion visible:
-  - `durationMinutes`
-  - o `duration`
-- Buffer limpieza de box:
-  - `cleaningMinutes`
-  - o `cleaningTime`
-  - o `cleaning_time`
-
-Tambien puedes enviar `totalBlockTime`, pero backend calcula bloque real con duracion + limpieza.
-
-### Valores permitidos para limpieza
-
-`cleaningMinutes` solo permite: `5`, `10`, `15`.
-
-Si llega otro valor, backend responde `400` con:
-
-- `code: VALIDATION_ERROR`
-- `error.field: cleaningMinutes`
-- `error.messageKey: appointment.cleaning_minutes.invalid`
-- `error.allowedValues: [5, 10, 15]`
-
-## 3) Estado de cita (endpoint status)
-
-Endpoint: `PATCH|PUT /api/appointment/{id}/status`
-
-Formatos aceptados:
-
-- body string JSON: `"Confirmada"`
-- body objeto: `{ "status": "Confirmada" }`
-- body objeto: `{ "stateName": "Confirmada" }`
-
-Estados permitidos por este endpoint:
-
+- `Programada`
 - `Confirmada`
 - `En curs`
 - `Cancel·lada`
-
-Si no es valido, responde `400` con `code: INVALID_STATUS`.
-
-Nota: otros estados internos pueden existir en backend (`Programada`, `Falta Consentiment`, `Finalitzada`) pero no se permiten en este endpoint de cambio manual.
-
-## 4) Primera visita
-
-Al crear cita, si el paciente tiene `lastOdontogramId = null`, backend asigna estado inicial:
-
+- `Finalitzada`
 - `Falta Consentiment`
 
-Si no, el estado inicial por defecto es:
+Recomendacion Angular: usar estas cadenas exactas (incluyendo mayusculas y acentos) en el desplegable.
 
-- `Programada`
+## 2) Flujo de estados
 
-## 5) Campos utiles en respuesta de listado
+Flujo esperado de negocio:
 
-`GET /api/appointment/index` y `GET /api/appointment/weekly` devuelven por cita:
+- Alta de cita:
+  - Por defecto: `Programada`
+  - Si el paciente no tiene odontograma previo: `Falta Consentiment`
+- Gestion manual desde UI (desplegable):
+  - Cambio via endpoint `/status`
+- Apertura de cita (abrir odontograma):
+  - Se fuerza `En curs` automaticamente en backend
+- Cierre de cita:
+  - Se marca `Finalitzada`
 
-- `duration` (duracion clinica visible)
-- `cleaningTime`
-- `cleaning_time`
-- `cleaningMinutes`
-- `totalBlockTime`
+## 3) Endpoint para cambiar estado manualmente
 
-## 6) Importante sobre persistencia del buffer
+Endpoint:
 
-Actualmente **no** hay columna dedicada en DB para `cleaningMinutes`.
+- `PATCH /api/appointment/{id}/status`
+- `PUT /api/appointment/{id}/status`
 
-Consecuencia:
+Body soportado (3 formatos):
 
-- El valor enviado (`5`, `10`, `15`) se usa en el flujo de guardado/validacion de solapes.
-- No se garantiza persistencia historica por cita tras recarga desde BD.
+1. String JSON:
 
-Recomendacion frontend:
+```json
+"Confirmada"
+```
 
-- Enviar siempre `cleaningMinutes` en cada create/update.
-
-## 7) Ejemplo de payload create/update
+2. Objeto con `status`:
 
 ```json
 {
-  "visitDate": "2026-04-20",
-  "visitTime": "10:30",
-  "consultationReason": "Control",
-  "observations": "",
-  "patient": 12,
-  "doctor": 3,
-  "box": 2,
-  "treatment": 9,
-  "duration": 30,
-  "durationMinutes": 30,
-  "cleaningTime": 5,
-  "cleaning_time": 5,
-  "cleaningMinutes": 5,
-  "totalBlockTime": 35
+  "status": "Confirmada"
 }
 ```
 
-## 8) Auth
+3. Objeto con `stateName`:
 
-Las rutas de appointment deben ir con JWT en `Authorization: Bearer <token>`.
+```json
+{
+  "stateName": "Confirmada"
+}
+```
 
-Si falta token, veras `401 Unauthorized`.
+Respuesta OK (200):
+
+```json
+{
+  "ok": true,
+  "code": "APPOINTMENT_STATUS_UPDATED",
+  "messageKey": "appointment.status.updated",
+  "id": 123,
+  "status": "Confirmada"
+}
+```
+
+Errores importantes:
+
+- JSON mal formado:
+  - `400`
+  - `code: INVALID_JSON`
+- Estado vacio/no string:
+  - `400`
+  - `code: VALIDATION_ERROR`
+- Estado fuera de lista permitida:
+  - `400`
+  - `code: INVALID_STATUS`
+
+## 4) Apertura de cita y odontograma
+
+Endpoint de apertura:
+
+- `GET /api/appointment/{id}/open`
+
+Comportamiento backend actual:
+
+- Cambia el estado de la cita a `En curs`.
+- Si el paciente no tiene odontograma, crea uno y lo enlaza.
+- Redirige a la vista de odontograma.
+
+Implicacion para Angular:
+
+- Tras abrir cita, refrescar la agenda/lista para pintar el nuevo estado `En curs`.
+
+## 5) Cierre de cita
+
+Endpoint:
+
+- `POST /api/appointment/{id}/close`
+
+Comportamiento:
+
+- Cambia estado a `Finalitzada`.
+
+## 6) Sugerencia de implementacion en Angular
+
+### Modelo de estados
+
+```ts
+export const APPOINTMENT_STATUSES = [
+  'Programada',
+  'Confirmada',
+  'En curs',
+  'Cancel·lada',
+  'Finalitzada',
+  'Falta Consentiment'
+] as const;
+
+export type AppointmentStatus = typeof APPOINTMENT_STATUSES[number];
+```
+
+### Actualizar estado desde desplegable
+
+```ts
+updateStatus(id: number, status: AppointmentStatus) {
+  return this.http.patch(`/api/appointment/${id}/status`, { status });
+}
+```
+
+### Abrir cita
+
+```ts
+openAppointment(id: number) {
+  // Backend redirige a odontograma y marca estado En curs.
+  window.location.href = `/api/appointment/${id}/open`;
+}
+```
+
+## 7) Checklist rapido frontend
+
+- El select de estados debe usar solo valores de `APPOINTMENT_STATUSES`.
+- Al recibir `INVALID_STATUS`, mostrar mensaje con la lista permitida del backend.
+- Al abrir cita (`/open`), refrescar agenda al volver para reflejar `En curs`.
+- Al cerrar (`/close`), actualizar inmediatamente el estado local a `Finalitzada`.
+- Enviar JWT en `Authorization: Bearer <token>`.
+
+## 8) QA - Criterios de aceptacion
+
+- El desplegable de estado muestra exactamente los 6 estados permitidos por backend.
+- Al guardar desde el desplegable, el estado queda persistido y visible tras recargar agenda.
+- Si el body viene con JSON invalido, la UI no rompe y muestra error controlado.
+- Si se envia un estado no permitido, la UI muestra mensaje de validacion y no cambia estado local.
+- Al usar Abrir cita, la cita pasa a `En curs` al refrescar la vista.
+- Al usar Cerrar cita, la cita pasa a `Finalitzada` y desaparece cualquier accion de apertura en UI.
+
+## 9) Casos de prueba sugeridos
+
+### Caso 1 - Cambio manual valido (objeto con status)
+
+Precondicion:
+
+- Cita existente en estado `Programada`.
+
+Accion:
+
+- `PATCH /api/appointment/{id}/status` con body:
+
+```json
+{
+  "status": "Confirmada"
+}
+```
+
+Resultado esperado:
+
+- HTTP 200.
+- `ok = true`.
+- `status = Confirmada`.
+
+### Caso 2 - Cambio manual valido (string JSON)
+
+Accion:
+
+- `PATCH /api/appointment/{id}/status` con body:
+
+```json
+"En curs"
+```
+
+Resultado esperado:
+
+- HTTP 200.
+- Estado actualizado a `En curs`.
+
+### Caso 3 - JSON invalido
+
+Accion:
+
+- `PATCH /api/appointment/{id}/status` con body mal formado:
+
+```json
+{ "status": "Confirmada"
+```
+
+Resultado esperado:
+
+- HTTP 400.
+- `code = INVALID_JSON`.
+- La UI muestra mensaje de error y mantiene el valor anterior.
+
+### Caso 4 - Estado no permitido
+
+Accion:
+
+- `PATCH /api/appointment/{id}/status` con body:
+
+```json
+{
+  "status": "Reprogramada"
+}
+```
+
+Resultado esperado:
+
+- HTTP 400.
+- `code = INVALID_STATUS`.
+- Respuesta incluye `allowedStatuses`.
+
+### Caso 5 - Abrir cita
+
+Accion:
+
+- Navegar a `GET /api/appointment/{id}/open` desde boton Abrir cita.
+
+Resultado esperado:
+
+- Redireccion a odontograma.
+- Estado de cita en agenda pasa a `En curs` al refrescar.
+
+### Caso 6 - Cerrar cita
+
+Accion:
+
+- `POST /api/appointment/{id}/close`.
+
+Resultado esperado:
+
+- HTTP 200.
+- Estado final `Finalitzada`.
+- Front oculta boton Abrir cita y/o acciones no permitidas para cita cerrada.
