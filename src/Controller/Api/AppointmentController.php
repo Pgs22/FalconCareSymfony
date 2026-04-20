@@ -189,8 +189,9 @@ final class AppointmentController extends AbstractController
         ];
     }
 
+    #[Route('/create', name: 'app_appointment_create', methods: ['POST'])]
     #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
-    public function new(
+    public function create(
         Request $request, 
         EntityManagerInterface $entityManager, 
         AppointmentRepository $repository
@@ -332,8 +333,9 @@ final class AppointmentController extends AbstractController
         return $this->redirectToRoute('app_odontogram_view', ['id' => $odontogramId]);
     }
 
+    #[Route('/{id}', name: 'app_appointment_read', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[Route('/{id}', name: 'app_appointment_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Appointment $appointment): JsonResponse
+    public function read(Appointment $appointment): JsonResponse
     {
         return $this->json([
             'id' => $appointment->getId(),
