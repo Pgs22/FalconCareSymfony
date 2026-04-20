@@ -18,7 +18,14 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
-    private const ALLOWED_STATUSES = ['Confirmada', 'En curs', 'Cancel·lada'];
+    private const ALLOWED_STATUSES = [
+        'Programada',
+        'Confirmada',
+        'En curs',
+        'Cancel·lada',
+        'Finalitzada',
+        'Falta Consentiment',
+    ];
     private const ALLOWED_CLEANING_MINUTES = [5, 10, 15];
     private const NO_KNOWN_MEDICATION_ALLERGIES = 'Cap coneguda';
 
@@ -182,8 +189,9 @@ final class AppointmentController extends AbstractController
         ];
     }
 
+    #[Route('/create', name: 'app_appointment_create', methods: ['POST'])]
     #[Route('/new', name: 'app_appointment_new', methods: ['POST'])]
-    public function new(
+    public function create(
         Request $request, 
         EntityManagerInterface $entityManager, 
         AppointmentRepository $repository
@@ -303,6 +311,8 @@ final class AppointmentController extends AbstractController
         Appointment $appointment, 
         EntityManagerInterface $entityManager
     ): Response {
+        $appointment->setStatus('En curs');
+
         $patient = $appointment->getPatient();
         $odontogramId = $patient->getLastOdontogramId();
 
@@ -323,8 +333,9 @@ final class AppointmentController extends AbstractController
         return $this->redirectToRoute('app_odontogram_view', ['id' => $odontogramId]);
     }
 
+    #[Route('/{id}', name: 'app_appointment_read', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[Route('/{id}', name: 'app_appointment_show', requirements: ['id' => '\d+'], methods: ['GET'])]
-    public function show(Appointment $appointment): JsonResponse
+    public function read(Appointment $appointment): JsonResponse
     {
         return $this->json([
             'id' => $appointment->getId(),
@@ -367,17 +378,30 @@ final class AppointmentController extends AbstractController
         Appointment $appointment,
         EntityManagerInterface $entityManager
     ): JsonResponse {
-        $payload = json_decode($request->getContent(), true);
+        $content = $request->getContent();
+        $payload = json_decode($content, true);
+
+        if ($content !== '' && $payload === null && json_last_error() !== JSON_ERROR_NONE) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_JSON',
+                'error' => [
+                    'messageKey' => 'request.body.invalid_json',
+                    'details' => json_last_error_msg(),
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
         $newStatus = '';
 
-        if (is_string($payload)) {
-            $newStatus = trim($payload);
-        } elseif (is_array($payload)) {
+        if (is_array($payload)) {
             if (isset($payload['status'])) {
                 $newStatus = trim((string) $payload['status']);
             } elseif (isset($payload['stateName'])) {
                 $newStatus = trim((string) $payload['stateName']);
             }
+        } else {
+            $newStatus = trim((string) $payload);
         }
 
         if ($newStatus === '') {
