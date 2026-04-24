@@ -23,7 +23,9 @@ final class SyncEventsController extends AbstractController
 
             $filePath = $syncPublisher->getStoragePath();
             $lastHeartbeatAt = time();
-            $lastOffset = 0;
+            // Avoid replaying historical events on each (re)connect.
+            // Clients only need fresh invalidation signals from "now" onwards.
+            $lastOffset = (is_file($filePath) && is_int($size = @filesize($filePath))) ? $size : 0;
             $lastAllergiesChecksum = null;
             $lastAllergiesProbeAt = 0;
 
