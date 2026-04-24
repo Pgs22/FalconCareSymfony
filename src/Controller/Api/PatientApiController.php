@@ -7,7 +7,9 @@ use App\Entity\User;
 use App\Repository\DocumentRepository;
 use App\Repository\PatientRepository;
 use App\Repository\UserRepository;
+use App\Repository\AppointmentRepository;
 use App\Service\PatientRecordsAccessChecker;
+use App\Service\RealtimeSyncPublisher;
 use App\Util\DocumentApiSerializer;
 use App\Util\PatientMedicationAllergiesResolver;
 use App\Util\PatientProfileImageResolver;
@@ -19,6 +21,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
+use App\Util\AppointmentHistoryPayloadBuilder;
 
 /**
  * JSON paciente:
@@ -32,6 +35,7 @@ final class PatientApiController extends AbstractController
 {
     public function __construct(
         private readonly PatientRecordsAccessChecker $patientRecordsAccess,
+        private readonly RealtimeSyncPublisher $syncPublisher,
     ) {
     }
 
@@ -183,7 +187,7 @@ final class PatientApiController extends AbstractController
             return $this->json(['message' => $allergiesResolved['message']], Response::HTTP_BAD_REQUEST);
         }
 
-        $allergiesBitmask = $this->resolveAllergiesBitmask($data);
+        $allergiesBitmask = $this->resolveAllergiesBitmask($data, $allergiesResolved['value']);
 
         $identityDocument = (string) $data['identityDocument'];
         if ($repo->findOneByIdentityDocument($identityDocument)) {
@@ -230,6 +234,16 @@ final class PatientApiController extends AbstractController
         }
 
         $repo->create($patient);
+        $this->syncPublisher->publishTopic('patients.changed');
+        $allergyFieldsPresent = array_key_exists('medicationAllergies', $data)
+            || array_key_exists('medication_allergies', $data)
+            || array_key_exists('allergiesBitmask', $data)
+            || array_key_exists('allergies_bitmask', $data)
+            || array_key_exists('selectedAllergies', $data)
+            || array_key_exists('selected_allergies', $data);
+        if ($allergyFieldsPresent) {
+            $this->syncPublisher->publishTopic('allergies.changed');
+        }
 
         $plainPassword = (string) ($data['plainPassword'] ?? '');
         if (trim($plainPassword) !== '') {
@@ -322,9 +336,13 @@ final class PatientApiController extends AbstractController
 
         if (
             array_key_exists('allergiesBitmask', $data)
+            || array_key_exists('allergies_bitmask', $data)
             || array_key_exists('selectedAllergies', $data)
+            || array_key_exists('selected_allergies', $data)
         ) {
-            $patient->setAllergiesBitmask($this->resolveAllergiesBitmask($data));
+            $patient->setAllergiesBitmask(
+                $this->resolveAllergiesBitmask($data, (string) ($patient->getMedicationAllergies() ?? ''))
+            );
         }
 
         $profilePick = PatientProfileImageResolver::pickFromArray($data);
@@ -345,6 +363,17 @@ final class PatientApiController extends AbstractController
         }
 
         $repo->edit($patient);
+
+        $this->syncPublisher->publishTopic('patients.changed');
+        $allergyFieldsChanged = array_key_exists('medicationAllergies', $data)
+            || array_key_exists('medication_allergies', $data)
+            || array_key_exists('allergiesBitmask', $data)
+            || array_key_exists('allergies_bitmask', $data)
+            || array_key_exists('selected_allergies', $data)
+            || array_key_exists('selectedAllergies', $data);
+        if ($allergyFieldsChanged) {
+            $this->syncPublisher->publishTopic('allergies.changed');
+        }
 
         return $this->json(self::serializePatient($patient), Response::HTTP_OK);
     }
@@ -368,8 +397,22 @@ final class PatientApiController extends AbstractController
         }
 
         $repo->delete($patient);
+        $this->syncPublisher->publishTopic('patients.changed');
 
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+    }
+
+    #[Route('/{id}/appointments', name: 'api_patient_appointments', requirements: ['id' => '\\d+'], methods: ['GET'])]
+    public function appointmentsHistory(int $id, PatientRepository $repo, AppointmentRepository $appointmentRepository): JsonResponse
+    {
+        $patient = $repo->findById($id);
+        if (!$patient) {
+            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+        }
+
+        $appointments = $appointmentRepository->findByPatientId($id);
+
+        return $this->json(AppointmentHistoryPayloadBuilder::buildList($appointments), Response::HTTP_OK);
     }
 
     private static function serializePatient(Patient $patient): array
@@ -404,17 +447,44 @@ final class PatientApiController extends AbstractController
     /**
      * @param array<string, mixed> $data
      */
-    private function resolveAllergiesBitmask(array $data): int
+    private function resolveAllergiesBitmask(array $data, string $medicationAllergies = ''): int
     {
         if (array_key_exists('selectedAllergies', $data) && is_array($data['selectedAllergies'])) {
             return Patient::buildAllergiesBitmask($data['selectedAllergies']);
+        }
+
+        if (array_key_exists('selected_allergies', $data) && is_array($data['selected_allergies'])) {
+            return Patient::buildAllergiesBitmask($data['selected_allergies']);
         }
 
         if (array_key_exists('allergiesBitmask', $data)) {
             return (int) $data['allergiesBitmask'];
         }
 
+        if (array_key_exists('allergies_bitmask', $data)) {
+            return (int) $data['allergies_bitmask'];
+        }
+
+        if ($medicationAllergies !== '') {
+            return $this->buildBitmaskFromMedicationText($medicationAllergies);
+        }
+
         return 0;
+    }
+
+    private function buildBitmaskFromMedicationText(string $medicationAllergies): int
+    {
+        $lower = mb_strtolower($medicationAllergies);
+        $catalog = Patient::getAllergyCatalog();
+        $bitmask = 0;
+
+        foreach ($catalog as $flag => $label) {
+            if (str_contains($lower, mb_strtolower($label))) {
+                $bitmask |= (int) $flag;
+            }
+        }
+
+        return $bitmask;
     }
 }
 
