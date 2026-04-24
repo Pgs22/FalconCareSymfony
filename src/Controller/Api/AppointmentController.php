@@ -6,6 +6,7 @@ use App\Entity\Appointment;
 use App\Entity\Patient;
 use App\Form\AppointmentType;
 use App\Repository\AppointmentRepository;
+use App\Service\RealtimeSyncPublisher;
 use App\Entity\Odontogram;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -33,9 +34,37 @@ final class AppointmentController extends AbstractController
     public function index(Request $request, AppointmentRepository $repo): JsonResponse 
     {
         $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
-        $fecha = new \DateTime($fechaStr);
+        $patientIdRaw = $request->query->get('patientId');
+        try {
+            $fecha = new \DateTime($fechaStr);
+        } catch (\Throwable) {
+            return $this->json([
+                'ok' => false,
+                'code' => 'INVALID_DATE',
+                'error' => [
+                    'field' => 'date',
+                    'messageKey' => 'appointment.date.invalid',
+                    'received' => $fechaStr,
+                ],
+            ], Response::HTTP_BAD_REQUEST);
+        }
 
-        $appointments = $repo->findByDate($fecha);
+        if ($patientIdRaw !== null && $patientIdRaw !== '') {
+            if (!ctype_digit((string) $patientIdRaw)) {
+                return $this->json([
+                    'ok' => false,
+                    'code' => 'VALIDATION_ERROR',
+                    'error' => [
+                        'field' => 'patientId',
+                        'messageKey' => 'appointment.patient_id.invalid',
+                        'received' => $patientIdRaw,
+                    ],
+                ], Response::HTTP_BAD_REQUEST);
+            }
+            $appointments = $repo->findByDateAndPatientId($fecha, (int) $patientIdRaw);
+        } else {
+            $appointments = $repo->findByDate($fecha);
+        }
 
         return $this->json($this->serializeAppointments($appointments));
     }
@@ -72,19 +101,52 @@ final class AppointmentController extends AbstractController
                 'patientName' => $appointment->getPatient() 
                     ? $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName() 
                     : 'Sense Pacient',
+                'patientId' => $appointment->getPatient()?->getId(),
                 'doctorName' => $appointment->getDoctor() 
                     ? $appointment->getDoctor()->getFirstName() 
                     : 'Sense Doctor',
+                'doctorId' => $appointment->getDoctor()?->getId(),
                 'boxId' => $appointment->getBox() ? $appointment->getBox()->getId() : null,
                 'box' => $appointment->getBox() ? $appointment->getBox()->getBoxName() : 'Sense Box',
                 'reason' => $reason,
+                'motive' => $reason,
+                'title' => $reason,
+                'type' => $reason,
+                'visit_type' => $reason,
+                'consultation_reason' => $reason,
                 'status' => $status,
                 'color' => $color,
                 'isUrgency' => $isUrgency,
-                'isFirstVisit' => $isFirstVisit
+                'isFirstVisit' => $isFirstVisit,
+                'patient' => $appointment->getPatient() ? [
+                    '@id' => '/api/patients/' . $appointment->getPatient()->getId(),
+                    'id' => $appointment->getPatient()->getId(),
+                ] : null,
+                'startTime' => $this->appointmentStartIso($appointment),
+                'start_time' => $this->appointmentStartIso($appointment),
+                'scheduledAt' => $this->appointmentStartIso($appointment),
+                'scheduled_at' => $this->appointmentStartIso($appointment),
+                'begin_at' => $this->appointmentStartIso($appointment),
             ];
         }
         return $result;
+    }
+
+    private function appointmentStartIso(Appointment $appointment): ?string
+    {
+        $date = $appointment->getVisitDate();
+        $time = $appointment->getVisitTime();
+        if ($date === null || $time === null) {
+            return null;
+        }
+
+        $dateTime = \DateTimeImmutable::createFromInterface($date)->setTime(
+            (int) $time->format('H'),
+            (int) $time->format('i'),
+            (int) $time->format('s')
+        );
+
+        return $dateTime->format(\DateTimeInterface::ATOM);
     }
 
     #[Route('/weekly', name: 'app_appointment_weekly', methods: ['GET'])]
@@ -191,10 +253,12 @@ final class AppointmentController extends AbstractController
     }
 
     #[Route('/create', name: 'app_appointment_create', methods: ['POST'])]
+    #[Route('', name: 'app_appointment_create_fallback', methods: ['POST'])]
     public function create(
         Request $request, 
         EntityManagerInterface $entityManager, 
-        AppointmentRepository $repository
+        AppointmentRepository $repository,
+        RealtimeSyncPublisher $syncPublisher
     ): JsonResponse {
         $appointment = new Appointment();
         $data = json_decode($request->getContent(), true);
@@ -262,6 +326,8 @@ final class AppointmentController extends AbstractController
                 $durationMinutes = $this->resolveDurationMinutes($data);
                 if ($durationMinutes !== null) {
                     $appointment->setDurationMinutes($durationMinutes);
+                } elseif ($appointment->getDurationMinutes() === null) {
+                    $appointment->setDurationMinutes(30);
                 }
 
                 $cleaningMinutes = $this->resolveCleaningMinutes($data);
@@ -294,6 +360,7 @@ final class AppointmentController extends AbstractController
 
                 $entityManager->persist($appointment);
                 $entityManager->flush();
+                $syncPublisher->publishTopic('appointments.changed');
 
                 $response = [
                     'ok' => true,
@@ -344,7 +411,8 @@ final class AppointmentController extends AbstractController
     #[Route('/{id}/open', name: 'app_appointment_open', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function open(
         Appointment $appointment, 
-        EntityManagerInterface $entityManager
+        EntityManagerInterface $entityManager,
+        RealtimeSyncPublisher $syncPublisher
     ): Response {
         $appointment->setStatus('En curs');
 
@@ -364,6 +432,8 @@ final class AppointmentController extends AbstractController
             
             $odontogramId = $newOdontogram->getId();
         }
+
+        $syncPublisher->publishTopic('appointments.changed');
 
         return $this->redirectToRoute('app_odontogram_view', ['id' => $odontogramId]);
     }
@@ -393,10 +463,15 @@ final class AppointmentController extends AbstractController
     }
 
     #[Route('/{id}/close', name: 'app_appointment_close', methods: ['POST'])]
-    public function close(Appointment $appointment, EntityManagerInterface $em): JsonResponse 
+    public function close(
+        Appointment $appointment,
+        EntityManagerInterface $em,
+        RealtimeSyncPublisher $syncPublisher
+    ): JsonResponse 
     {
         $appointment->setStatus('Finalitzada');
         $em->flush();
+        $syncPublisher->publishTopic('appointments.changed');
         return $this->json([
             'ok' => true,
             'code' => 'APPOINTMENT_CLOSED',
@@ -410,7 +485,8 @@ final class AppointmentController extends AbstractController
     public function updateStatus(
         Request $request,
         Appointment $appointment,
-        EntityManagerInterface $entityManager
+        EntityManagerInterface $entityManager,
+        RealtimeSyncPublisher $syncPublisher
     ): JsonResponse {
         $content = $request->getContent();
         $payload = json_decode($content, true);
@@ -466,6 +542,7 @@ final class AppointmentController extends AbstractController
 
         $appointment->setStatus($newStatus);
         $entityManager->flush();
+        $syncPublisher->publishTopic('appointments.changed');
 
         return $this->json([
             'ok' => true,
@@ -481,7 +558,8 @@ final class AppointmentController extends AbstractController
         Request $request, 
         Appointment $appointment, 
         EntityManagerInterface $entityManager,
-        AppointmentRepository $repository
+        AppointmentRepository $repository,
+        RealtimeSyncPublisher $syncPublisher
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
         if (!$data) {
@@ -533,6 +611,7 @@ final class AppointmentController extends AbstractController
                 }
 
                 $entityManager->flush();
+                $syncPublisher->publishTopic('appointments.changed');
                 
                 return $this->json([
                     'ok' => true,
@@ -562,10 +641,15 @@ final class AppointmentController extends AbstractController
 
     #[Route('/{id}', name: 'app_appointment_delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
     #[Route('/{id}/delete', name: 'app_appointment_delete_legacy', requirements: ['id' => '\d+'], methods: ['DELETE', 'POST'])]
-    public function delete(Appointment $appointment, EntityManagerInterface $entityManager): JsonResponse
+    public function delete(
+        Appointment $appointment,
+        EntityManagerInterface $entityManager,
+        RealtimeSyncPublisher $syncPublisher
+    ): JsonResponse
     {
         $entityManager->remove($appointment);
         $entityManager->flush();
+        $syncPublisher->publishTopic('appointments.changed');
 
         return $this->json([
             'ok' => true,
