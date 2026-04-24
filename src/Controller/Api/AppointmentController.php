@@ -62,6 +62,7 @@ final class AppointmentController extends AbstractController
 
             $result[] = [
                 'id' => $appointment->getId(),
+                'date' => $appointment->getVisitDate()->format('Y-m-d'),
                 'time' => $appointment->getVisitTime() ? $appointment->getVisitTime()->format('H:i') : '--:--',
                 'duration' => $appointment->getDurationMinutes() ?? 30,
                 'cleaningTime' => $appointment->getCleaningMinutes(),
