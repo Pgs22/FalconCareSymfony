@@ -173,6 +173,20 @@ final class AppointmentController extends AbstractController
         return count($overlaps) > 0;
     }
 
+    private function isDoctorOccupied(AppointmentRepository $repository, Appointment $newApp): bool
+    {
+        $overlaps = $repository->findOverlappingAppointmentsByDoctor(
+            $newApp->getVisitDate(),
+            $newApp->getVisitTime(),
+            (int)($newApp->getDurationMinutes() ?? 15),
+            $newApp->getDoctor()?->getId(),
+            $newApp->getId(),
+            $newApp->getCleaningMinutes()
+        );
+
+        return count($overlaps) > 0;
+    }
+
     private function resolveDurationMinutes(array $data): ?int
     {
         if (isset($data['durationMinutes'])) {
@@ -377,6 +391,17 @@ final class AppointmentController extends AbstractController
                         'code' => 'BOX_OCCUPIED',
                         'error' => [
                             'messageKey' => 'appointment.box.occupied',
+                        ],
+                    ], Response::HTTP_CONFLICT);
+                }
+
+                if ($this->isDoctorOccupied($repository, $appointment)) {
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'DOCTOR_OCCUPIED',
+                        'error' => [
+                            'messageKey' => 'appointment.doctor.occupied',
+                            'message' => 'El doctor ya tiene una cita en ese horario.',
                         ],
                     ], Response::HTTP_CONFLICT);
                 }
@@ -614,6 +639,17 @@ final class AppointmentController extends AbstractController
                         'code' => 'BOX_OCCUPIED',
                         'error' => [
                             'messageKey' => 'appointment.box.occupied',
+                        ],
+                    ], Response::HTTP_CONFLICT);
+                }
+
+                if ($this->isDoctorOccupied($repository, $appointment)) {
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'DOCTOR_OCCUPIED',
+                        'error' => [
+                            'messageKey' => 'appointment.doctor.occupied',
+                            'message' => 'El doctor ya tiene una cita en ese horario.',
                         ],
                     ], Response::HTTP_CONFLICT);
                 }

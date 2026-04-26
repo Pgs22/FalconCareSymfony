@@ -299,6 +299,68 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertSame('Falta consentiment', $payload['appointment']['status']);
     }
 
+    public function testCreateAppointmentRejectsDoctorOverlapInDifferentBox(): void
+    {
+        $client = static::createClient();
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $hasher = $client->getContainer()->get(UserPasswordHasherInterface::class);
+
+        $adminEmail = 'appointments-admin-doctor-overlap@test.falconcare.local';
+        $admin = $em->getRepository(User::class)->findOneBy(['email' => $adminEmail]);
+        if ($admin === null) {
+            $admin = new User();
+            $admin->setEmail($adminEmail);
+            $admin->setPassword($hasher->hashPassword($admin, 'secret123'));
+            $admin->setRoles(['ROLE_ADMIN']);
+            $em->persist($admin);
+            $em->flush();
+        }
+
+        $fixture = self::createAppointmentFixture($em, 'DOCOVER01');
+        $existing = $fixture['appointment'];
+        $doctor = $existing->getDoctor();
+
+        $box = new Box();
+        $box->setBoxName('DoctorOverlapBox2');
+        $box->setStatus(true);
+        $box->setCapacity(1);
+        $em->persist($box);
+
+        $patient = new Patient();
+        $patient->setIdentityDocument('DOCOVER02');
+        $patient->setFirstName('Other');
+        $patient->setLastName('Patient');
+        $patient->setPhone('699000002');
+        $patient->setEmail('doctor-overlap-patient@test.local');
+        $patient->setAddress('Addr');
+        $patient->setConsultationReason('Control');
+        $patient->setFamilyHistory('None');
+        $patient->setHealthStatus('Good');
+        $patient->setLifestyleHabits('Good');
+        $patient->setMedicationAllergies('none');
+        $patient->setRegistrationDate(new \DateTimeImmutable());
+        $em->persist($patient);
+        $em->flush();
+
+        $headers = self::getAuthHeadersFor($client, $adminEmail, 'secret123');
+        $client->request('POST', '/api/appointment/create', [], [], $headers, json_encode([
+            'visitDate' => $existing->getVisitDate()?->format('Y-m-d'),
+            'visitTime' => $existing->getVisitTime()?->format('H:i'),
+            'consultationReason' => 'Control',
+            'observations' => '',
+            'patient' => $patient->getId(),
+            'doctor' => $doctor?->getId(),
+            'box' => $box->getId(),
+            'durationMinutes' => 30,
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_CONFLICT);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('DOCTOR_OCCUPIED', $payload['code']);
+        self::assertSame('appointment.doctor.occupied', $payload['error']['messageKey']);
+    }
+
     public function testUpdateAllowsEditingCreateFormFieldsAndDuration(): void
     {
         $client = static::createClient();
