@@ -520,6 +520,43 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertSame(['Confirmada', 'Arribada', 'Cancelada'], $payload['error']['allowedStatuses']);
     }
 
+    public function testManualStatusEndpointNormalizesSupportedLanguageVariants(): void
+    {
+        $client = static::createClient();
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $hasher = $client->getContainer()->get(UserPasswordHasherInterface::class);
+
+        $adminEmail = 'appointments-admin-status-i18n@test.falconcare.local';
+        $admin = $em->getRepository(User::class)->findOneBy(['email' => $adminEmail]);
+        if ($admin === null) {
+            $admin = new User();
+            $admin->setEmail($adminEmail);
+            $admin->setPassword($hasher->hashPassword($admin, 'secret123'));
+            $admin->setRoles(['ROLE_ADMIN']);
+            $em->persist($admin);
+            $em->flush();
+        }
+
+        $fixture = self::createAppointmentFixture($em, 'I18N01');
+        $appointment = $fixture['appointment'];
+        $headers = self::getAuthHeadersFor($client, $adminEmail, 'secret123');
+
+        $client->request('PATCH', '/api/appointment/'.$appointment->getId().'/status', [], [], $headers, json_encode([
+            'status' => 'Cancelled',
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('Cancelada', $payload['status']);
+        self::assertSame('Cancelada', $payload['appointment']['status']);
+
+        $em->clear();
+        $updated = $em->getRepository(Appointment::class)->find($appointment->getId());
+        self::assertInstanceOf(Appointment::class, $updated);
+        self::assertSame('Cancelada', $updated->getStatus());
+    }
+
     public function testOpenAppointmentSetsAndReturnsInProgressStatus(): void
     {
         $client = static::createClient();

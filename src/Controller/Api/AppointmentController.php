@@ -57,6 +57,29 @@ final class AppointmentController extends AbstractController
         };
     }
 
+    private function normalizeManualStatus(?string $status): string
+    {
+        $status = trim((string) $status);
+
+        return match ($status) {
+            'Confirmada',
+            'Confirmed',
+            'Confirmado' => 'Confirmada',
+            'Arribada',
+            'Llegada',
+            'Arrived',
+            'Arribat' => 'Arribada',
+            'Cancelada',
+            'Cancel·lada',
+            'CancelÂ·lada',
+            'CancelÃ‚Â·lada',
+            'Cancelled',
+            'Canceled',
+            'Cancelado' => 'Cancelada',
+            default => $status,
+        };
+    }
+
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
     public function index(Request $request, AppointmentRepository $repo): JsonResponse 
     {
@@ -510,6 +533,8 @@ final class AppointmentController extends AbstractController
                 ],
             ], Response::HTTP_BAD_REQUEST);
         }
+
+        $newStatus = $this->normalizeManualStatus($newStatus);
 
         if (!in_array($newStatus, self::MANUAL_STATUSES, true)) {
             return $this->json([
