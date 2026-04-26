@@ -77,7 +77,6 @@
         "symfony/polyfill-php82": "*"
     },
     "scripts": {
-        "test:angular-contract": "php bin/phpunit --group angular-contract",
         "auto-scripts": {
             "cache:clear": "symfony-cmd",
             "assets:install %PUBLIC_DIR%": "symfony-cmd",

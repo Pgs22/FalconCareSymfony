@@ -48,14 +48,12 @@ security:
         # temporal
         - { path: ^/api/patients, roles: PUBLIC_ACCESS, methods: [GET, POST] }
         - { path: ^/api/appointment, roles: PUBLIC_ACCESS, methods: [GET, POST] }
-        - { path: ^/api/appointments, roles: PUBLIC_ACCESS, methods: [GET] }
         - { path: ^/api/treatments/patient, roles: PUBLIC_ACCESS }
         # temporal
         - { path: ^/api/docs, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/register-doctor, roles: PUBLIC_ACCESS }
         - { path: ^/api/health, roles: PUBLIC_ACCESS }
-        - { path: ^/api/events/sync, roles: PUBLIC_ACCESS }
         - { path: ^/api/users, roles: ROLE_ADMIN }
         - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
         # - { path: ^/admin, roles: ROLE_ADMIN }
