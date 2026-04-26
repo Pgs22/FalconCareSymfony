@@ -21,7 +21,6 @@ class AppointmentType extends AbstractType
             ->add('visitTime')
             ->add('consultationReason')
             ->add('observations')
-            ->add('status')
             ->add('patient', EntityType::class, [
                 'class' => Patient::class,
                 'choice_label' => 'id',

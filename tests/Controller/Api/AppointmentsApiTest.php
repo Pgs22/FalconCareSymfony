@@ -37,6 +37,59 @@ final class AppointmentsApiTest extends WebTestCase
         ];
     }
 
+    /**
+     * @return array{appointment: Appointment, patient: Patient}
+     */
+    private static function createAppointmentFixture(EntityManagerInterface $em, string $suffix): array
+    {
+        $box = new Box();
+        $box->setBoxName('AutoBox-'.$suffix);
+        $box->setStatus(true);
+        $box->setCapacity(1);
+        $em->persist($box);
+
+        $doctor = new Doctor();
+        $doctor->setFirstName('Auto');
+        $doctor->setLastNames('Doctor '.$suffix);
+        $doctor->setSpecialty('General');
+        $doctor->setPhone('600'.$suffix);
+        $doctor->setEmail('auto-doctor-'.$suffix.'@test.local');
+        $em->persist($doctor);
+
+        $patient = new Patient();
+        $patient->setIdentityDocument('AUTO'.$suffix);
+        $patient->setFirstName('Auto');
+        $patient->setLastName('Patient '.$suffix);
+        $patient->setPhone('611'.$suffix);
+        $patient->setEmail('auto-patient-'.$suffix.'@test.local');
+        $patient->setAddress('Addr');
+        $patient->setConsultationReason('Control');
+        $patient->setFamilyHistory('None');
+        $patient->setHealthStatus('Good');
+        $patient->setLifestyleHabits('Good');
+        $patient->setMedicationAllergies('none');
+        $patient->setRegistrationDate(new \DateTimeImmutable());
+        $em->persist($patient);
+
+        $appointment = new Appointment();
+        $appointment->setVisitDate(new \DateTime('2026-04-24'));
+        $appointment->setVisitTime(new \DateTime('13:30:00'));
+        $appointment->setConsultationReason('Control');
+        $appointment->setObservations('');
+        $appointment->setStatus('Programada');
+        $appointment->setPatient($patient);
+        $appointment->setDoctor($doctor);
+        $appointment->setBox($box);
+        $appointment->setDurationMinutes(30);
+        $em->persist($appointment);
+        $em->flush();
+
+        return [
+            'appointment' => $appointment,
+            'patient' => $patient,
+        ];
+    }
+
     public function testListRequiresPatientFilter(): void
     {
         $client = static::createClient();
@@ -241,7 +294,9 @@ final class AppointmentsApiTest extends WebTestCase
 
         $createdAppointment = $em->getRepository(Appointment::class)->find($payload['id']);
         self::assertInstanceOf(Appointment::class, $createdAppointment);
-        self::assertSame('Falta Consentiment', $createdAppointment->getStatus());
+        self::assertSame('Falta consentiment', $createdAppointment->getStatus());
+        self::assertSame('Falta consentiment', $payload['status']);
+        self::assertSame('Falta consentiment', $payload['appointment']['status']);
     }
 
     public function testUpdateAllowsEditingCreateFormFieldsAndDuration(): void
@@ -376,11 +431,180 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertSame('11:45', $updated->getVisitTime()?->format('H:i'));
         self::assertSame('Updated reason', $updated->getConsultationReason());
         self::assertSame('Updated obs', $updated->getObservations());
-        self::assertSame('Confirmada', $updated->getStatus());
+        self::assertSame('Programada', $updated->getStatus());
         self::assertSame(55, $updated->getDurationMinutes());
         self::assertSame($patient2->getId(), $updated->getPatient()?->getId());
         self::assertSame($doctor2->getId(), $updated->getDoctor()?->getId());
         self::assertSame($box2->getId(), $updated->getBox()?->getId());
         self::assertSame($treatment2->getId(), $updated->getTreatment()?->getId());
+    }
+
+    public function testManualStatusEndpointAllowsOnlyManualStatuses(): void
+    {
+        $client = static::createClient();
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $hasher = $client->getContainer()->get(UserPasswordHasherInterface::class);
+
+        $adminEmail = 'appointments-admin-status@test.falconcare.local';
+        $admin = $em->getRepository(User::class)->findOneBy(['email' => $adminEmail]);
+        if ($admin === null) {
+            $admin = new User();
+            $admin->setEmail($adminEmail);
+            $admin->setPassword($hasher->hashPassword($admin, 'secret123'));
+            $admin->setRoles(['ROLE_ADMIN']);
+            $em->persist($admin);
+            $em->flush();
+        }
+
+        $box = new Box();
+        $box->setBoxName('StatusBox');
+        $box->setStatus(true);
+        $box->setCapacity(1);
+        $em->persist($box);
+
+        $doctor = new Doctor();
+        $doctor->setFirstName('Status');
+        $doctor->setLastNames('Doctor');
+        $doctor->setSpecialty('General');
+        $doctor->setPhone('666666666');
+        $doctor->setEmail('status-doctor@test.local');
+        $em->persist($doctor);
+
+        $patient = new Patient();
+        $patient->setIdentityDocument('STATUS01');
+        $patient->setFirstName('Status');
+        $patient->setLastName('Patient');
+        $patient->setPhone('677777777');
+        $patient->setEmail('status-patient@test.local');
+        $patient->setAddress('Addr');
+        $patient->setConsultationReason('Control');
+        $patient->setFamilyHistory('None');
+        $patient->setHealthStatus('Good');
+        $patient->setLifestyleHabits('Good');
+        $patient->setMedicationAllergies('none');
+        $patient->setRegistrationDate(new \DateTimeImmutable());
+        $em->persist($patient);
+
+        $appointment = new Appointment();
+        $appointment->setVisitDate(new \DateTime('2026-04-23'));
+        $appointment->setVisitTime(new \DateTime('12:30:00'));
+        $appointment->setConsultationReason('Control');
+        $appointment->setObservations('');
+        $appointment->setStatus('Programada');
+        $appointment->setPatient($patient);
+        $appointment->setDoctor($doctor);
+        $appointment->setBox($box);
+        $appointment->setDurationMinutes(30);
+        $em->persist($appointment);
+        $em->flush();
+
+        $headers = self::getAuthHeadersFor($client, $adminEmail, 'secret123');
+
+        $client->request('PATCH', '/api/appointment/'.$appointment->getId().'/status', [], [], $headers, json_encode([
+            'status' => 'Arribada',
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('Arribada', $payload['status']);
+        self::assertSame('Arribada', $payload['appointment']['status']);
+
+        $client->request('PATCH', '/api/appointment/'.$appointment->getId().'/status', [], [], $headers, json_encode([
+            'status' => 'En curs',
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('INVALID_STATUS', $payload['code']);
+        self::assertSame(['Confirmada', 'Arribada', 'Cancelada'], $payload['error']['allowedStatuses']);
+    }
+
+    public function testOpenAppointmentSetsAndReturnsInProgressStatus(): void
+    {
+        $client = static::createClient();
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $fixture = self::createAppointmentFixture($em, 'OPEN01');
+        $appointment = $fixture['appointment'];
+
+        $client->request('GET', '/api/appointment/'.$appointment->getId().'/open');
+
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('En curs', $payload['status']);
+        self::assertSame('En curs', $payload['appointment']['status']);
+
+        $em->clear();
+        $updated = $em->getRepository(Appointment::class)->find($appointment->getId());
+        self::assertInstanceOf(Appointment::class, $updated);
+        self::assertSame('En curs', $updated->getStatus());
+    }
+
+    public function testReadNormalizesLegacyAndEmptyStatusesForFrontendDisplay(): void
+    {
+        $client = static::createClient();
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+
+        $emptyStatusFixture = self::createAppointmentFixture($em, 'EMPTY01');
+        $emptyStatusAppointment = $emptyStatusFixture['appointment'];
+        $emptyStatusAppointment->setStatus(' ');
+
+        $legacyStatusFixture = self::createAppointmentFixture($em, 'LEGACY01');
+        $legacyStatusAppointment = $legacyStatusFixture['appointment'];
+        $legacyStatusAppointment->setStatus('Encurs');
+
+        $em->flush();
+
+        $client->request('GET', '/api/appointment/'.$emptyStatusAppointment->getId());
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('Programada', $payload['status']);
+
+        $client->request('GET', '/api/appointment/'.$legacyStatusAppointment->getId());
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('En curs', $payload['status']);
+    }
+
+    public function testOpeningOdontogramDoesNotChangeAppointmentStatus(): void
+    {
+        $client = static::createClient();
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $hasher = $client->getContainer()->get(UserPasswordHasherInterface::class);
+
+        $adminEmail = 'appointments-admin-odontogram-open@test.falconcare.local';
+        $admin = $em->getRepository(User::class)->findOneBy(['email' => $adminEmail]);
+        if ($admin === null) {
+            $admin = new User();
+            $admin->setEmail($adminEmail);
+            $admin->setPassword($hasher->hashPassword($admin, 'secret123'));
+            $admin->setRoles(['ROLE_ADMIN']);
+            $em->persist($admin);
+            $em->flush();
+        }
+
+        $fixture = self::createAppointmentFixture($em, 'ODO01');
+        $appointment = $fixture['appointment'];
+        $patient = $fixture['patient'];
+        $headers = self::getAuthHeadersFor($client, $adminEmail, 'secret123');
+
+        $client->request('POST', '/api/odontograms/open', [], [], $headers, json_encode([
+            'patient_id' => $patient->getId(),
+            'visit_id' => $appointment->getId(),
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('odontogram', $payload);
+        self::assertArrayNotHasKey('status', $payload);
+        self::assertArrayNotHasKey('appointment', $payload);
+
+        $em->clear();
+        $updated = $em->getRepository(Appointment::class)->find($appointment->getId());
+        self::assertInstanceOf(Appointment::class, $updated);
+        self::assertSame('Programada', $updated->getStatus());
     }
 }
