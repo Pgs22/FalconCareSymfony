@@ -18,16 +18,44 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
-    private const ALLOWED_STATUSES = [
-        'Programada',
+    private const STATUS_SCHEDULED = 'Programada';
+    private const STATUS_MISSING_CONSENT = 'Falta consentiment';
+    private const STATUS_IN_PROGRESS = 'En curs';
+    private const STATUS_FINISHED = 'Finalitzada';
+
+    private const MANUAL_STATUSES = [
         'Confirmada',
-        'En curs',
-        'Cancel·lada',
-        'Finalitzada',
-        'Falta Consentiment',
+        'Arribada',
+        'Cancelada',
+    ];
+
+    private const ALLOWED_STATUSES = [
+        self::STATUS_SCHEDULED,
+        self::STATUS_MISSING_CONSENT,
+        self::STATUS_IN_PROGRESS,
+        self::STATUS_FINISHED,
+        'Confirmada',
+        'Arribada',
+        'Cancelada',
     ];
     private const ALLOWED_CLEANING_MINUTES = [5, 10, 15];
     private const NO_KNOWN_MEDICATION_ALLERGIES = 'Cap coneguda';
+
+    private function normalizeAppointmentStatus(?string $status): string
+    {
+        $status = trim((string) $status);
+
+        if ($status === '') {
+            return self::STATUS_SCHEDULED;
+        }
+
+        return match ($status) {
+            'Encurs' => self::STATUS_IN_PROGRESS,
+            'Falta Consentiment' => self::STATUS_MISSING_CONSENT,
+            'Cancel·lada', 'CancelÂ·lada' => 'Cancelada',
+            default => $status,
+        };
+    }
 
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
     public function index(Request $request, AppointmentRepository $repo): JsonResponse 
@@ -45,7 +73,7 @@ final class AppointmentController extends AbstractController
         $result = [];
         foreach ($appointments as $appointment) {
             $reason = $appointment->getConsultationReason() ?? '';
-            $status = $appointment->getStatus() ?? 'Programada';
+            $status = $this->normalizeAppointmentStatus($appointment->getStatus());
             
             $isUrgency = $appointment->isUrgency() || str_contains(strtolower($reason), 'urgència') || str_contains(strtolower($reason), 'urgencia');
             $isFirstVisit = $appointment->isFirstVisit() || str_contains(strtolower($reason), 'primera visita');
@@ -159,17 +187,55 @@ final class AppointmentController extends AbstractController
 
     private function resolveInitialAppointmentStatus(Appointment $appointment): string
     {
-        $status = trim((string) $appointment->getStatus());
-        if ($status !== '') {
-            return $status;
-        }
-
         $patient = $appointment->getPatient();
         if ($patient !== null && $patient->getLastOdontogramId() === null) {
-            return 'Falta Consentiment';
+            return self::STATUS_MISSING_CONSENT;
         }
 
-        return 'Programada';
+        return self::STATUS_SCHEDULED;
+    }
+
+    private function serializeAppointment(Appointment $appointment, ?int $odontogramId = null): array
+    {
+        $patient = $appointment->getPatient();
+        $doctor = $appointment->getDoctor();
+        $box = $appointment->getBox();
+        $reason = $appointment->getConsultationReason() ?? '';
+        $status = $this->normalizeAppointmentStatus($appointment->getStatus());
+
+        $data = [
+            'id' => $appointment->getId(),
+            'date' => $appointment->getVisitDate()?->format('Y-m-d'),
+            'visitDate' => $appointment->getVisitDate()?->format('Y-m-d'),
+            'time' => $appointment->getVisitTime()?->format('H:i'),
+            'visitTime' => $appointment->getVisitTime()?->format('H:i'),
+            'reason' => $reason,
+            'consultationReason' => $reason,
+            'observations' => $appointment->getObservations() ?? '',
+            'status' => $status,
+            'duration' => $appointment->getDurationMinutes(),
+            'durationMinutes' => $appointment->getDurationMinutes(),
+            'cleaningMinutes' => $appointment->getCleaningMinutes(),
+            'patient' => [
+                'id' => $patient?->getId(),
+                'name' => $patient ? trim($patient->getFirstName() . ' ' . $patient->getLastName()) : 'Pacient desconegut',
+            ],
+            'patientId' => $patient?->getId(),
+            'doctor' => [
+                'id' => $doctor?->getId(),
+                'name' => $doctor ? trim($doctor->getFirstName() . ' ' . $doctor->getLastNames()) : 'Sense doctor',
+            ],
+            'doctorId' => $doctor?->getId(),
+            'box' => $box?->getBoxName() ?? 'Sense box',
+            'boxId' => $box?->getId(),
+            'treatmentId' => $appointment->getTreatment()?->getId(),
+        ];
+
+        if ($odontogramId !== null) {
+            $data['odontogramId'] = $odontogramId;
+        }
+
+        return $data;
     }
 
     private function buildMedicationAllergyAlert(Patient $patient): ?array
@@ -300,6 +366,8 @@ final class AppointmentController extends AbstractController
                     'code' => 'APPOINTMENT_CREATED',
                     'messageKey' => 'appointment.created',
                     'id' => $appointment->getId(),
+                    'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+                    'appointment' => $this->serializeAppointment($appointment),
                 ];
 
                 $patient = $appointment->getPatient();
@@ -345,8 +413,8 @@ final class AppointmentController extends AbstractController
     public function open(
         Appointment $appointment, 
         EntityManagerInterface $entityManager
-    ): Response {
-        $appointment->setStatus('En curs');
+    ): JsonResponse {
+        $appointment->setStatus(self::STATUS_IN_PROGRESS);
 
         $patient = $appointment->getPatient();
         $odontogramId = $patient->getLastOdontogramId();
@@ -360,49 +428,41 @@ final class AppointmentController extends AbstractController
             $entityManager->flush();
 
             $patient->setLastOdontogramId($newOdontogram->getId());
-            $entityManager->flush();
-            
             $odontogramId = $newOdontogram->getId();
         }
 
-        return $this->redirectToRoute('app_odontogram_view', ['id' => $odontogramId]);
+        $entityManager->flush();
+
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_OPENED',
+            'messageKey' => 'appointment.opened',
+            'id' => $appointment->getId(),
+            'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+            'odontogramId' => $odontogramId,
+            'appointment' => $this->serializeAppointment($appointment, $odontogramId),
+        ]);
     }
 
     #[Route('/{id}', name: 'app_appointment_read', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function read(Appointment $appointment): JsonResponse
     {
-        return $this->json([
-            'id' => $appointment->getId(),
-            'date' => $appointment->getVisitDate() ? $appointment->getVisitDate()->format('Y-m-d') : null,
-            'time' => $appointment->getVisitTime() ? $appointment->getVisitTime()->format('H:i') : null,
-            'reason' => $appointment->getConsultationReason() ?? '',
-            'observations' => $appointment->getObservations() ?? '',
-            'status' => $appointment->getStatus() ?? 'Programada',
-            'duration' => $appointment->getDurationMinutes(),
-            'patient' => [
-                'id' => $appointment->getPatient()?->getId(),
-                'name' => $appointment->getPatient() ? ($appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName()) : 'Pacient desconegut',
-            ],
-            'doctor' => [
-                'id' => $appointment->getDoctor()?->getId(),
-                'name' => $appointment->getDoctor() ? ($appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames()) : 'Sense doctor',
-            ],
-            'box' => $appointment->getBox()?->getBoxName() ?? 'Sense box',
-            'treatmentId' => $appointment->getTreatment()?->getId(),
-        ]);
+        return $this->json($this->serializeAppointment($appointment));
     }
 
     #[Route('/{id}/close', name: 'app_appointment_close', methods: ['POST'])]
+    #[Route('/{id}/finish', name: 'app_appointment_finish', requirements: ['id' => '\d+'], methods: ['POST', 'PATCH'])]
     public function close(Appointment $appointment, EntityManagerInterface $em): JsonResponse 
     {
-        $appointment->setStatus('Finalitzada');
+        $appointment->setStatus(self::STATUS_FINISHED);
         $em->flush();
         return $this->json([
             'ok' => true,
             'code' => 'APPOINTMENT_CLOSED',
             'messageKey' => 'appointment.closed',
             'id' => $appointment->getId(),
-            'status' => $appointment->getStatus(),
+            'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+            'appointment' => $this->serializeAppointment($appointment),
         ]);
     }
 
@@ -446,19 +506,19 @@ final class AppointmentController extends AbstractController
                     'field' => 'status',
                     'messageKey' => 'appointment.status.required_string',
                     'expected' => 'string',
-                    'allowedStatuses' => self::ALLOWED_STATUSES,
+                    'allowedStatuses' => self::MANUAL_STATUSES,
                 ],
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        if (!in_array($newStatus, self::ALLOWED_STATUSES, true)) {
+        if (!in_array($newStatus, self::MANUAL_STATUSES, true)) {
             return $this->json([
                 'ok' => false,
                 'code' => 'INVALID_STATUS',
                 'error' => [
                     'field' => 'status',
                     'messageKey' => 'appointment.status.invalid',
-                    'allowedStatuses' => self::ALLOWED_STATUSES,
+                    'allowedStatuses' => self::MANUAL_STATUSES,
                     'received' => $newStatus,
                 ],
             ], Response::HTTP_BAD_REQUEST);
@@ -472,7 +532,8 @@ final class AppointmentController extends AbstractController
             'code' => 'APPOINTMENT_STATUS_UPDATED',
             'messageKey' => 'appointment.status.updated',
             'id' => $appointment->getId(),
-            'status' => $appointment->getStatus(),
+            'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+            'appointment' => $this->serializeAppointment($appointment),
         ]);
     }
 
@@ -539,6 +600,8 @@ final class AppointmentController extends AbstractController
                     'code' => 'APPOINTMENT_UPDATED',
                     'messageKey' => 'appointment.updated',
                     'id' => $appointment->getId(),
+                    'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+                    'appointment' => $this->serializeAppointment($appointment),
                 ]);
             } catch (\Exception $e) {
                 return $this->json([
