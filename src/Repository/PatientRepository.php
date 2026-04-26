@@ -146,15 +146,4 @@ class PatientRepository extends ServiceEntityRepository
         $em->remove($patient);
         $em->flush();
     }
-
-    public function getAllergiesStateChecksum(): string
-    {
-        $rows = $this->createQueryBuilder('p')
-            ->select('p.id AS id, p.medicationAllergies AS medicationAllergies, p.allergiesBitmask AS allergiesBitmask')
-            ->orderBy('p.id', 'ASC')
-            ->getQuery()
-            ->getArrayResult();
-
-        return hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
-    }
 }

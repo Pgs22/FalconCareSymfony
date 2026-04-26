@@ -11,12 +11,10 @@ use App\Entity\Patient;
 use App\Entity\Treatment;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
-use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
-#[Group('angular-contract')]
 final class AppointmentsApiTest extends WebTestCase
 {
     private static function getAuthHeadersFor(

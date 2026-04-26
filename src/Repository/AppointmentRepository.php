@@ -25,18 +25,6 @@ class AppointmentRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }    
-
-    public function findByDateAndPatientId(\DateTimeInterface $date, int $patientId): array
-    {
-        return $this->createQueryBuilder('a')
-            ->andWhere('a.visitDate = :date')
-            ->andWhere('a.patient = :patientId')
-            ->setParameter('date', $date->format('Y-m-d'))
-            ->setParameter('patientId', $patientId)
-            ->orderBy('a.visitTime', 'ASC')
-            ->getQuery()
-            ->getResult();
-    }
     
     public function findByWeek(\DateTime $date): array
     {
@@ -50,17 +38,6 @@ class AppointmentRepository extends ServiceEntityRepository
             ->setParameter('end', $endOfWeek)
             ->orderBy('a.visitDate', 'ASC')
             ->addOrderBy('a.visitTime', 'ASC')
-            ->getQuery()
-            ->getResult();
-    }
-
-    public function findByPatientId(int $patientId): array
-    {
-        return $this->createQueryBuilder('a')
-            ->andWhere('a.patient = :patientId')
-            ->setParameter('patientId', $patientId)
-            ->orderBy('a.visitDate', 'DESC')
-            ->addOrderBy('a.visitTime', 'DESC')
             ->getQuery()
             ->getResult();
     }

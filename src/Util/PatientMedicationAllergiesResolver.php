@@ -10,19 +10,6 @@ namespace App\Util;
  */
 final class PatientMedicationAllergiesResolver
 {
-    private const PLACEHOLDER_VALUES = [
-        'n/a',
-        'na',
-        'none',
-        'null',
-        'ninguna',
-        'cap',
-        'cap coneguda',
-        'sin alergias',
-        'sin alergia',
-        'no allergies',
-        'no allergy',
-    ];
     /**
      * For POST: requires at least one key; values must be non-empty after trim; both keys must match if present.
      *
@@ -32,9 +19,8 @@ final class PatientMedicationAllergiesResolver
     {
         $hasCamel = \array_key_exists('medicationAllergies', $data);
         $hasSnake = \array_key_exists('medication_allergies', $data);
-        $hasFlags = self::hasAllergyFlags($data);
 
-        if (!$hasCamel && !$hasSnake && !$hasFlags) {
+        if (!$hasCamel && !$hasSnake) {
             return ['ok' => false, 'message' => 'Missing required fields'];
         }
 
@@ -43,11 +29,7 @@ final class PatientMedicationAllergiesResolver
             return ['ok' => false, 'message' => $r['error']];
         }
 
-        if ($r['value'] === '' && $hasFlags) {
-            return ['ok' => true, 'value' => self::serializeFlagsToString($data)];
-        }
-
-        if ($r['value'] === '' && !$hasFlags) {
+        if ($r['value'] === '') {
             return ['ok' => false, 'message' => 'Missing required fields'];
         }
 
@@ -63,19 +45,14 @@ final class PatientMedicationAllergiesResolver
     {
         $hasCamel = \array_key_exists('medicationAllergies', $data);
         $hasSnake = \array_key_exists('medication_allergies', $data);
-        $hasFlags = self::hasAllergyFlags($data);
 
-        if (!$hasCamel && !$hasSnake && !$hasFlags) {
+        if (!$hasCamel && !$hasSnake) {
             return ['apply' => false];
         }
 
         $r = self::mergeTwoKeys($data, $hasCamel, $hasSnake);
         if ($r['error'] !== null) {
             return ['apply' => true, 'error' => $r['error']];
-        }
-
-        if ($r['value'] === '' && $hasFlags) {
-            return ['apply' => true, 'value' => self::serializeFlagsToString($data)];
         }
 
         return ['apply' => true, 'value' => $r['value']];
@@ -109,85 +86,6 @@ final class PatientMedicationAllergiesResolver
             return '';
         }
 
-        $raw = trim((string) $v);
-        if ($raw === '') {
-            return '';
-        }
-
-        $raw = (string) preg_replace(
-            '/\b(n\/a|na|none|null|ninguna|cap coneguda|cap|sin alergias|sin alergia|no allergies|no allergy)\b/iu',
-            '',
-            $raw
-        );
-
-        $parts = preg_split('/[,;|\/]+/', $raw) ?: [];
-        $normalized = [];
-        $seen = [];
-
-        foreach ($parts as $part) {
-            $item = trim($part);
-            if ($item === '') {
-                continue;
-            }
-
-            $lower = mb_strtolower($item);
-            if (in_array($lower, self::PLACEHOLDER_VALUES, true)) {
-                continue;
-            }
-
-            if (isset($seen[$lower])) {
-                continue;
-            }
-
-            $seen[$lower] = true;
-            $normalized[] = $item;
-        }
-
-        return implode(', ', $normalized);
-    }
-
-    private static function hasAllergyFlags(array $data): bool
-    {
-        return array_key_exists('selectedAllergies', $data)
-            || array_key_exists('selected_allergies', $data)
-            || array_key_exists('allergiesBitmask', $data)
-            || array_key_exists('allergies_bitmask', $data);
-    }
-
-    private static function serializeFlagsToString(array $data): string
-    {
-        $selected = [];
-        if (array_key_exists('selectedAllergies', $data) && is_array($data['selectedAllergies'])) {
-            $selected = $data['selectedAllergies'];
-        } elseif (array_key_exists('selected_allergies', $data) && is_array($data['selected_allergies'])) {
-            $selected = $data['selected_allergies'];
-        } elseif (array_key_exists('allergiesBitmask', $data) || array_key_exists('allergies_bitmask', $data)) {
-            $bitmask = (int) ($data['allergiesBitmask'] ?? $data['allergies_bitmask'] ?? 0);
-            $catalog = \App\Entity\Patient::getAllergyCatalog();
-            foreach ($catalog as $flag => $label) {
-                if (($bitmask & (int) $flag) === (int) $flag) {
-                    $selected[] = $flag;
-                }
-            }
-        }
-
-        $catalog = \App\Entity\Patient::getAllergyCatalog();
-        $labels = [];
-        $seen = [];
-        foreach ($selected as $value) {
-            $flag = (int) $value;
-            if (!isset($catalog[$flag])) {
-                continue;
-            }
-            $label = (string) $catalog[$flag];
-            $key = mb_strtolower($label);
-            if (isset($seen[$key])) {
-                continue;
-            }
-            $seen[$key] = true;
-            $labels[] = $label;
-        }
-
-        return implode(', ', $labels);
+        return trim((string) $v);
     }
 }
