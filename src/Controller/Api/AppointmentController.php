@@ -366,6 +366,9 @@ final class AppointmentController extends AbstractController
                 if ($durationMinutes !== null) {
                     $appointment->setDurationMinutes($durationMinutes);
                 }
+                if ($appointment->getDurationMinutes() === null) {
+                    $appointment->setDurationMinutes(30);
+                }
 
                 $cleaningMinutes = $this->resolveCleaningMinutes($data);
                 if ($cleaningMinutes !== null) {

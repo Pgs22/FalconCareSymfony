@@ -43,9 +43,11 @@ class DocumentRepository extends ServiceEntityRepository
     public function findByPatientOrdered(Patient $patient): array
     {
         return $this->createQueryBuilder('d')
+            ->distinct()
             ->andWhere('d.patient = :patient')
             ->setParameter('patient', $patient)
-            ->orderBy('d.id', 'ASC')
+            ->orderBy('d.captureDate', 'DESC')
+            ->addOrderBy('d.id', 'DESC')
             ->getQuery()
             ->getResult();
     }
