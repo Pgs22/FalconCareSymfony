@@ -56,10 +56,6 @@ final class UserController extends AbstractController
     )]
     public function index(): JsonResponse
     {
-        if (!$this->isGranted('ROLE_ADMIN')) {
-            return $this->json(['error' => 'Forbidden', 'message' => 'Only admins can list users.'], Response::HTTP_FORBIDDEN);
-        }
-
         $users = $this->userRepository->findBy([], ['id' => 'ASC']);
         $data = array_map(fn (User $user) => $this->serializeUser($user), $users);
 
@@ -119,10 +115,6 @@ final class UserController extends AbstractController
     )]
     public function create(Request $request): JsonResponse
     {
-        if (!$this->isGranted('ROLE_ADMIN')) {
-            return $this->json(['error' => 'Forbidden', 'message' => 'Only admins can create users.'], Response::HTTP_FORBIDDEN);
-        }
-
         $user = new User();
         $form = $this->createForm(UserType::class, $user, ['require_password' => true, 'csrf_protection' => false]);
         $requestData = self::getRequestData($request);
@@ -221,10 +213,6 @@ final class UserController extends AbstractController
     )]
     public function delete(User $user): JsonResponse
     {
-        if (!$this->isGranted('ROLE_ADMIN')) {
-            return $this->json(['error' => 'Forbidden', 'message' => 'Only admins can delete users.'], Response::HTTP_FORBIDDEN);
-        }
-
         $this->entityManager->remove($user);
         $this->entityManager->flush();
 
