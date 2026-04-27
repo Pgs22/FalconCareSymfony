@@ -39,7 +39,7 @@ final class PatientApiController extends AbstractController
     #[OA\Get(
         path: '/api/patients',
         summary: 'List patients',
-        security: [['bearerAuth' => []]],
+        //security: [['bearerAuth' => []]],
         parameters: [
             new OA\Parameter(
                 name: 'search',
@@ -53,13 +53,6 @@ final class PatientApiController extends AbstractController
     )]
     public function list(Request $request, PatientRepository $repo): JsonResponse
     {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->json(
-                ['error' => 'Forbidden', 'message' => 'You do not have permission to list patients.'],
-                Response::HTTP_FORBIDDEN
-            );
-        }
-
         $search = trim((string) $request->query->get('search', ''));
         try {
             $patients = $search !== '' ? $repo->search($search) : $repo->getAll();
@@ -123,13 +116,6 @@ final class PatientApiController extends AbstractController
     )]
     public function show(int $id, PatientRepository $repo): JsonResponse
     {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->json(
-                ['error' => 'Forbidden', 'message' => 'You do not have permission to read patient records.'],
-                Response::HTTP_FORBIDDEN
-            );
-        }
-
         $patient = $repo->findById($id);
         if (!$patient) {
             return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
@@ -151,13 +137,6 @@ final class PatientApiController extends AbstractController
     )]
     public function byIdentity(string $identityDocument, PatientRepository $repo): JsonResponse
     {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->json(
-                ['error' => 'Forbidden', 'message' => 'You do not have permission to read patient records.'],
-                Response::HTTP_FORBIDDEN
-            );
-        }
-
         $patients = $repo->findByIdentityDocument($identityDocument);
         if (empty($patients)) {
             return $this->json(['message' => 'No patients found'], Response::HTTP_NOT_FOUND);
@@ -172,7 +151,7 @@ final class PatientApiController extends AbstractController
     #[OA\Post(
         path: '/api/patients',
         summary: 'Create patient',
-        security: [['bearerAuth' => []]],
+        security: [],
         requestBody: new OA\RequestBody(
             required: true,
             description: 'Include medicationAllergies and/or medication_allergies (same value if both). Optional allergy bitmask input: allergiesBitmask or selectedAllergies. GET responses expose both allergy text keys and the bitmask fields.',
@@ -190,13 +169,6 @@ final class PatientApiController extends AbstractController
         UserPasswordHasherInterface $passwordHasher
     ): JsonResponse
     {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->json(
-                ['error' => 'Forbidden', 'message' => 'You do not have permission to create patients.'],
-                Response::HTTP_FORBIDDEN
-            );
-        }
-
         $data = $request->getContentTypeFormat() === 'json' ? $request->toArray() : $request->request->all();
 
         $required = ['identityDocument', 'firstName', 'lastName', 'phone', 'email', 'address', 'consultationReason', 'familyHistory', 'healthStatus', 'lifestyleHabits'];
@@ -390,13 +362,6 @@ final class PatientApiController extends AbstractController
     )]
     public function delete(int $id, PatientRepository $repo): JsonResponse
     {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->json(
-                ['error' => 'Forbidden', 'message' => 'You do not have permission to delete patients.'],
-                Response::HTTP_FORBIDDEN
-            );
-        }
-
         $patient = $repo->findById($id);
         if (!$patient) {
             return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
