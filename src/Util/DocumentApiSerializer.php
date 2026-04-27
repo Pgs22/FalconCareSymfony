@@ -29,13 +29,10 @@ final class DocumentApiSerializer
             '@id' => $docIri,
             '@type' => 'Document',
             'id' => $document->getId(),
-            'patientIri' => $patientIri,
-            'patient_iri' => $patientIri,
             'patient' => [
                 '@id' => $patientIri,
                 'id' => $patientId,
             ],
-            'patientRef' => $patientIri,
             'patientId' => $patientId,
             'description' => $document->getDescription(),
             'captureDate' => $document->getCaptureDate()?->format(DATE_ATOM),

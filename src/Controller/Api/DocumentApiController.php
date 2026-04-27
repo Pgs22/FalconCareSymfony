@@ -6,13 +6,10 @@ namespace App\Controller\Api;
 
 use App\Entity\Patient;
 use App\Repository\DocumentRepository;
-use App\Repository\AppointmentRepository;
 use App\Repository\PatientRepository;
-use App\Repository\RadiographAnnotationRepository;
 use App\Service\PatientRecordsAccessChecker;
 use App\Util\DocumentApiSerializer;
 use App\Util\PatientIriParser;
-use App\Util\RadiographAnnotationSerializer;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -21,19 +18,14 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Route('/api/documents')]
 #[OA\Tag(name: 'Documents')]
 final class DocumentApiController extends AbstractController
 {
-    private const MAX_UPLOAD_SIZE_BYTES = 52428800; // 50 MiB
-
     public function __construct(
         private readonly DocumentRepository $documentRepository,
-        private readonly RadiographAnnotationRepository $annotationRepository,
-        private readonly AppointmentRepository $appointmentRepository,
         private readonly PatientRecordsAccessChecker $patientRecordsAccess,
         #[Autowire('%env(API_BASE_URL)%')]
         private readonly string $apiBaseUrl,
@@ -178,14 +170,7 @@ final class DocumentApiController extends AbstractController
             return $this->json(['message' => 'File not found on server'], Response::HTTP_NOT_FOUND);
         }
 
-        return $this->file(
-            $filePath,
-            $document->getOriginalName() ?? $document->getFilePath(),
-            ResponseHeaderBag::DISPOSITION_INLINE,
-            [
-                'Content-Type' => $document->getType() ?: 'application/octet-stream',
-            ]
-        );
+        return $this->file($filePath, $document->getOriginalName() ?? $document->getFilePath());
     }
 
     #[Route('', name: 'api_document_list', methods: ['GET'])]
@@ -197,7 +182,6 @@ final class DocumentApiController extends AbstractController
             new OA\Parameter(name: 'patientId', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
             new OA\Parameter(name: 'patient.id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
             new OA\Parameter(name: 'patient', in: 'query', required: false, description: 'IRI absoluta /api/patients/{id}', schema: new OA\Schema(type: 'string')),
-            new OA\Parameter(name: 'patient_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
             new OA\Response(response: 200, description: 'Array or hydra:Collection'),
@@ -257,31 +241,7 @@ final class DocumentApiController extends AbstractController
 
         $uploadedFile = $request->files->get('file');
         if (!$uploadedFile instanceof UploadedFile) {
-            $uploadError = (int) $request->server->get('UPLOAD_ERR', 0);
-            if ($uploadError === \UPLOAD_ERR_INI_SIZE || $uploadError === \UPLOAD_ERR_FORM_SIZE) {
-                return $this->payloadTooLargeErrorResponse();
-            }
-
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'No file provided in "file" field.',
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        if ($uploadedFile->getError() === \UPLOAD_ERR_INI_SIZE || $uploadedFile->getError() === \UPLOAD_ERR_FORM_SIZE) {
-            return $this->payloadTooLargeErrorResponse();
-        }
-
-        $maxUploadSize = self::MAX_UPLOAD_SIZE_BYTES;
-        if ($uploadedFile->getSize() === 0) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Uploaded file is empty.',
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        if ($uploadedFile->getSize() > $maxUploadSize) {
-            return $this->payloadTooLargeErrorResponse($maxUploadSize);
+            return $this->json(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
         }
 
         $patientRaw = $request->request->get('patient');
@@ -310,8 +270,7 @@ final class DocumentApiController extends AbstractController
         }
 
         $description = $request->request->get('description');
-        $description = $description !== null ? trim((string) $description) : null;
-        $description = $description !== '' ? $description : null;
+        $description = $description !== null && $description !== '' ? (string) $description : null;
 
         $originalName = $uploadedFile->getClientOriginalName() ?: null;
 
@@ -381,7 +340,6 @@ final class DocumentApiController extends AbstractController
         requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(type: 'object')),
         responses: [
             new OA\Response(response: 200, description: 'Updated'),
-            new OA\Response(response: 400, description: 'Bad request'),
             new OA\Response(response: 403, description: 'Forbidden'),
             new OA\Response(response: 404, description: 'Not found'),
         ]
@@ -415,17 +373,6 @@ final class DocumentApiController extends AbstractController
         $data = json_decode($request->getContent(), true);
         if (!\is_array($data)) {
             return $this->json(['error' => 'Invalid JSON'], Response::HTTP_BAD_REQUEST);
-        }
-
-        if (\array_key_exists('description', $data) && $data['description'] !== null && !\is_string($data['description'])) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Field "description" must be a string or null.',
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        if (\array_key_exists('description', $data) && \is_string($data['description'])) {
-            $data['description'] = trim($data['description']);
         }
 
         $this->documentRepository->edit($document, $data);
@@ -464,225 +411,13 @@ final class DocumentApiController extends AbstractController
         }
 
         $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
-        if (is_file($filePath) && !@unlink($filePath)) {
-            return $this->json([
-                'error' => 'Conflict',
-                'message' => 'The document file could not be deleted from storage.',
-            ], Response::HTTP_CONFLICT);
+        if (is_file($filePath)) {
+            unlink($filePath);
         }
 
         $this->documentRepository->delete($document);
 
         return $this->json(['result' => 'deleted', 'id' => $documentId], Response::HTTP_OK);
-    }
-
-    #[Route('/{id}/annotations', name: 'api_document_annotations_list', requirements: ['id' => '\\d+'], methods: ['GET'])]
-    #[OA\Get(
-        path: '/api/documents/{id}/annotations',
-        summary: 'List radiograph annotations for a document',
-        security: [['bearerAuth' => []]],
-        parameters: [
-            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'patientId', in: 'query', required: true, schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'appointmentId', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'Annotations list'),
-            new OA\Response(response: 400, description: 'Bad request'),
-            new OA\Response(response: 403, description: 'Forbidden'),
-            new OA\Response(response: 404, description: 'Not found'),
-        ]
-    )]
-    public function listAnnotations(Request $request, int $id): JsonResponse
-    {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->clinicalForbidden();
-        }
-
-        [$document, $patientId, $errorResponse] = $this->resolveDocumentByPatientScope($request, $id);
-        if ($errorResponse !== null) {
-            return $errorResponse;
-        }
-
-        $annotations = $this->annotationRepository->findByDocumentOrdered($document);
-        $appointmentId = PatientIriParser::parsePatientId($request->query->get('appointmentId'));
-        if ($appointmentId !== null) {
-            $annotations = array_values(array_filter(
-                $annotations,
-                static fn ($annotation) => $annotation->getAppointment()?->getId() === $appointmentId
-            ));
-        }
-
-        return $this->json([
-            'documentId' => $document->getId(),
-            'patientId' => $patientId,
-            'items' => RadiographAnnotationSerializer::collection($annotations),
-        ], Response::HTTP_OK);
-    }
-
-    #[Route('/{id}/annotations', name: 'api_document_annotations_create', requirements: ['id' => '\\d+'], methods: ['POST'])]
-    #[OA\Post(
-        path: '/api/documents/{id}/annotations',
-        summary: 'Create radiograph annotation',
-        security: [['bearerAuth' => []]],
-        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(type: 'object')),
-        responses: [
-            new OA\Response(response: 201, description: 'Created'),
-            new OA\Response(response: 400, description: 'Bad request'),
-            new OA\Response(response: 403, description: 'Forbidden'),
-            new OA\Response(response: 404, description: 'Not found'),
-        ]
-    )]
-    public function createAnnotation(Request $request, int $id): JsonResponse
-    {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->clinicalForbidden();
-        }
-
-        [$document, $patientId, $errorResponse] = $this->resolveDocumentByPatientScope($request, $id);
-        if ($errorResponse !== null) {
-            return $errorResponse;
-        }
-
-        $data = json_decode($request->getContent(), true);
-        if (!\is_array($data)) {
-            return $this->json(['error' => 'Bad request', 'message' => 'Invalid JSON body.'], Response::HTTP_BAD_REQUEST);
-        }
-
-        $appointmentId = PatientIriParser::parsePatientId($data['appointmentId'] ?? $data['visitId'] ?? null);
-        if ($appointmentId === null) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Field appointmentId (or visitId) is required.',
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        $appointment = $this->appointmentRepository->find($appointmentId);
-        if ($appointment === null) {
-            return $this->json(['error' => 'Appointment not found'], Response::HTTP_NOT_FOUND);
-        }
-
-        if ($appointment->getPatient()?->getId() !== $patientId) {
-            return $this->json([
-                'error' => 'Forbidden',
-                'message' => 'Appointment does not belong to the indicated patient.',
-            ], Response::HTTP_FORBIDDEN);
-        }
-
-        $payload = $data['payload'] ?? $data['data'] ?? null;
-        if (!\is_array($payload)) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Field payload (or data) must be an object.',
-            ], Response::HTTP_BAD_REQUEST);
-        }
-
-        $now = new \DateTimeImmutable();
-        $annotation = new \App\Entity\RadiographAnnotation();
-        $annotation
-            ->setDocument($document)
-            ->setPatient($document->getPatient())
-            ->setAppointment($appointment)
-            ->setTool((string) ($data['tool'] ?? 'generic'))
-            ->setLabel(isset($data['label']) ? (string) $data['label'] : null)
-            ->setColor(isset($data['color']) ? (string) $data['color'] : null)
-            ->setPayload($payload)
-            ->setCreatedAt($now)
-            ->setUpdatedAt($now);
-
-        $this->annotationRepository->save($annotation);
-
-        return $this->json(RadiographAnnotationSerializer::toArray($annotation), Response::HTTP_CREATED);
-    }
-
-    #[Route('/{documentId}/annotations/{annotationId}', name: 'api_document_annotations_update', requirements: ['documentId' => '\\d+', 'annotationId' => '\\d+'], methods: ['PUT'])]
-    public function updateAnnotation(Request $request, int $documentId, int $annotationId): JsonResponse
-    {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->clinicalForbidden();
-        }
-
-        [$document, $patientId, $errorResponse] = $this->resolveDocumentByPatientScope($request, $documentId);
-        if ($errorResponse !== null) {
-            return $errorResponse;
-        }
-
-        $annotation = $this->annotationRepository->find($annotationId);
-        if ($annotation === null || $annotation->getDocument()?->getId() !== $document->getId()) {
-            return $this->json(['error' => 'Annotation not found'], Response::HTTP_NOT_FOUND);
-        }
-
-        if ($annotation->getPatient()?->getId() !== $patientId) {
-            return $this->json(['error' => 'Forbidden', 'message' => 'Annotation does not belong to this patient.'], Response::HTTP_FORBIDDEN);
-        }
-
-        $data = json_decode($request->getContent(), true);
-        if (!\is_array($data)) {
-            return $this->json(['error' => 'Bad request', 'message' => 'Invalid JSON body.'], Response::HTTP_BAD_REQUEST);
-        }
-
-        if (\array_key_exists('appointmentId', $data) || \array_key_exists('visitId', $data)) {
-            $appointmentId = PatientIriParser::parsePatientId($data['appointmentId'] ?? $data['visitId']);
-            if ($appointmentId === null) {
-                return $this->json(['error' => 'Bad request', 'message' => 'appointmentId must be a valid id.'], Response::HTTP_BAD_REQUEST);
-            }
-            $appointment = $this->appointmentRepository->find($appointmentId);
-            if ($appointment === null) {
-                return $this->json(['error' => 'Appointment not found'], Response::HTTP_NOT_FOUND);
-            }
-            if ($appointment->getPatient()?->getId() !== $patientId) {
-                return $this->json(['error' => 'Forbidden', 'message' => 'Appointment does not belong to this patient.'], Response::HTTP_FORBIDDEN);
-            }
-            $annotation->setAppointment($appointment);
-        }
-
-        if (\array_key_exists('tool', $data)) {
-            $annotation->setTool((string) $data['tool']);
-        }
-        if (\array_key_exists('label', $data)) {
-            $annotation->setLabel($data['label'] !== null ? (string) $data['label'] : null);
-        }
-        if (\array_key_exists('color', $data)) {
-            $annotation->setColor($data['color'] !== null ? (string) $data['color'] : null);
-        }
-        if (\array_key_exists('payload', $data) || \array_key_exists('data', $data)) {
-            $payload = $data['payload'] ?? $data['data'];
-            if (!\is_array($payload)) {
-                return $this->json(['error' => 'Bad request', 'message' => 'payload must be an object.'], Response::HTTP_BAD_REQUEST);
-            }
-            $annotation->setPayload($payload);
-        }
-
-        $annotation->setUpdatedAt(new \DateTimeImmutable());
-        $this->annotationRepository->save($annotation);
-
-        return $this->json(RadiographAnnotationSerializer::toArray($annotation), Response::HTTP_OK);
-    }
-
-    #[Route('/{documentId}/annotations/{annotationId}', name: 'api_document_annotations_delete', requirements: ['documentId' => '\\d+', 'annotationId' => '\\d+'], methods: ['DELETE'])]
-    public function deleteAnnotation(Request $request, int $documentId, int $annotationId): JsonResponse
-    {
-        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
-            return $this->clinicalForbidden();
-        }
-
-        [$document, $patientId, $errorResponse] = $this->resolveDocumentByPatientScope($request, $documentId);
-        if ($errorResponse !== null) {
-            return $errorResponse;
-        }
-
-        $annotation = $this->annotationRepository->find($annotationId);
-        if ($annotation === null || $annotation->getDocument()?->getId() !== $document->getId()) {
-            return $this->json(['error' => 'Annotation not found'], Response::HTTP_NOT_FOUND);
-        }
-
-        if ($annotation->getPatient()?->getId() !== $patientId) {
-            return $this->json(['error' => 'Forbidden', 'message' => 'Annotation does not belong to this patient.'], Response::HTTP_FORBIDDEN);
-        }
-
-        $this->annotationRepository->remove($annotation);
-
-        return $this->json(['result' => 'deleted', 'id' => $annotationId], Response::HTTP_OK);
     }
 
     private function jsonDocumentsForPatientId(Request $request, int $patientId, PatientRepository $patientRepository): JsonResponse
@@ -698,38 +433,10 @@ final class DocumentApiController extends AbstractController
         return DocumentApiSerializer::createDocumentListResponse($request, $members);
     }
 
-    /**
-     * @return array{0: ?\App\Entity\Document, 1: ?int, 2: ?JsonResponse}
-     */
-    private function resolveDocumentByPatientScope(Request $request, int $documentId): array
-    {
-        $patientId = PatientIriParser::parsePatientId($request->query->get('patientId'));
-        if ($patientId === null) {
-            return [null, null, $this->json([
-                'error' => 'Bad request',
-                'message' => 'Query parameter patientId is required.',
-            ], Response::HTTP_BAD_REQUEST)];
-        }
-
-        $document = $this->documentRepository->findById($documentId);
-        if ($document === null || $document->getPatient() === null) {
-            return [null, null, $this->json(['message' => 'Document not found'], Response::HTTP_NOT_FOUND)];
-        }
-
-        if ($document->getPatient()->getId() !== $patientId) {
-            return [null, null, $this->json([
-                'error' => 'Forbidden',
-                'message' => 'Document does not belong to the indicated patient.',
-            ], Response::HTTP_FORBIDDEN)];
-        }
-
-        return [$document, $patientId, null];
-    }
-
     private function resolvePatientFilterFromQuery(Request $request): ?int
     {
         $q = $request->query->all();
-        // Angular puede enviar patient.id; algunos entornos lo normalizan a patient_id.
+        // Angular suele enviar patient.id; PHP puede normalizar el punto a guion bajo en QUERY_STRING.
         foreach (['patient.id', 'patient_id'] as $key) {
             if (\array_key_exists($key, $q)) {
                 return PatientIriParser::parsePatientId($q[$key]);
@@ -751,15 +458,6 @@ final class DocumentApiController extends AbstractController
             'error' => 'Forbidden',
             'message' => 'You do not have permission to access patient documents.',
         ], Response::HTTP_FORBIDDEN);
-    }
-
-    private function payloadTooLargeErrorResponse(int $maxUploadSize = self::MAX_UPLOAD_SIZE_BYTES): JsonResponse
-    {
-        return $this->json([
-            'error' => 'Payload too large',
-            'message' => 'Uploaded file exceeds the maximum allowed size.',
-            'maxUploadBytes' => $maxUploadSize,
-        ], Response::HTTP_REQUEST_ENTITY_TOO_LARGE);
     }
 
     private function handleFileStorage(UploadedFile $file, Patient $patient): string
