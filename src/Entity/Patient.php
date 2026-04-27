@@ -15,7 +15,6 @@ class Patient
     public const ALLERGY_LATEX = 2;
     public const ALLERGY_ANESTHESIA = 4;
     public const ALLERGY_NSAIDS = 8;
-    public const ALLERGY_CHLORHEXIDINE = 16;
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -344,7 +343,6 @@ class Patient
             self::ALLERGY_LATEX => 'Latex',
             self::ALLERGY_ANESTHESIA => 'Anesthesia',
             self::ALLERGY_NSAIDS => 'NSAIDs',
-            self::ALLERGY_CHLORHEXIDINE => 'Chlorhexidine',
         ];
     }
 

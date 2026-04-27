@@ -41,7 +41,6 @@ Entidad:
 - `2` -> `ALLERGY_LATEX`
 - `4` -> `ALLERGY_ANESTHESIA`
 - `8` -> `ALLERGY_NSAIDS`
-- `16` -> `ALLERGY_CHLORHEXIDINE`
 
 Ejemplo:
 
@@ -147,7 +146,6 @@ export const AllergyFlag = {
   LATEX: 2,
   ANESTHESIA: 4,
   NSAIDS: 8,
-  CHLORHEXIDINE: 16,
 } as const;
 
 export function buildAllergiesBitmask(selected: number[]): number {
@@ -160,7 +158,6 @@ export function selectedFromBitmask(mask: number): number[] {
     AllergyFlag.LATEX,
     AllergyFlag.ANESTHESIA,
     AllergyFlag.NSAIDS,
-    AllergyFlag.CHLORHEXIDINE,
   ];
   return all.filter((flag) => (mask & flag) === flag);
 }

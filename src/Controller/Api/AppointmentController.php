@@ -57,29 +57,6 @@ final class AppointmentController extends AbstractController
         };
     }
 
-    private function normalizeManualStatus(?string $status): string
-    {
-        $status = trim((string) $status);
-
-        return match ($status) {
-            'Confirmada',
-            'Confirmed',
-            'Confirmado' => 'Confirmada',
-            'Arribada',
-            'Llegada',
-            'Arrived',
-            'Arribat' => 'Arribada',
-            'Cancelada',
-            'Cancel·lada',
-            'CancelÂ·lada',
-            'CancelÃ‚Â·lada',
-            'Cancelled',
-            'Canceled',
-            'Cancelado' => 'Cancelada',
-            default => $status,
-        };
-    }
-
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
     public function index(Request $request, AppointmentRepository $repo): JsonResponse 
     {
@@ -170,20 +147,6 @@ final class AppointmentController extends AbstractController
             $newApp->getId(),
             $newApp->getCleaningMinutes()
         );
-        return count($overlaps) > 0;
-    }
-
-    private function isDoctorOccupied(AppointmentRepository $repository, Appointment $newApp): bool
-    {
-        $overlaps = $repository->findOverlappingAppointmentsByDoctor(
-            $newApp->getVisitDate(),
-            $newApp->getVisitTime(),
-            (int)($newApp->getDurationMinutes() ?? 15),
-            $newApp->getDoctor()?->getId(),
-            $newApp->getId(),
-            $newApp->getCleaningMinutes()
-        );
-
         return count($overlaps) > 0;
     }
 
@@ -395,17 +358,6 @@ final class AppointmentController extends AbstractController
                     ], Response::HTTP_CONFLICT);
                 }
 
-                if ($this->isDoctorOccupied($repository, $appointment)) {
-                    return $this->json([
-                        'ok' => false,
-                        'code' => 'DOCTOR_OCCUPIED',
-                        'error' => [
-                            'messageKey' => 'appointment.doctor.occupied',
-                            'message' => 'El doctor ya tiene una cita en ese horario.',
-                        ],
-                    ], Response::HTTP_CONFLICT);
-                }
-
                 $entityManager->persist($appointment);
                 $entityManager->flush();
 
@@ -559,8 +511,6 @@ final class AppointmentController extends AbstractController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        $newStatus = $this->normalizeManualStatus($newStatus);
-
         if (!in_array($newStatus, self::MANUAL_STATUSES, true)) {
             return $this->json([
                 'ok' => false,
@@ -639,17 +589,6 @@ final class AppointmentController extends AbstractController
                         'code' => 'BOX_OCCUPIED',
                         'error' => [
                             'messageKey' => 'appointment.box.occupied',
-                        ],
-                    ], Response::HTTP_CONFLICT);
-                }
-
-                if ($this->isDoctorOccupied($repository, $appointment)) {
-                    return $this->json([
-                        'ok' => false,
-                        'code' => 'DOCTOR_OCCUPIED',
-                        'error' => [
-                            'messageKey' => 'appointment.doctor.occupied',
-                            'message' => 'El doctor ya tiene una cita en ese horario.',
                         ],
                     ], Response::HTTP_CONFLICT);
                 }

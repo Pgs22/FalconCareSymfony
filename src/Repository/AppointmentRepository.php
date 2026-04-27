@@ -45,32 +45,6 @@ class AppointmentRepository extends ServiceEntityRepository
 
     public function findOverlappingAppointments($date, $startTime, int $duration, $boxId, $excludeId = null, ?int $cleaningMinutes = null): array 
     {
-        return $this->findOverlappingAppointmentsByResource(
-            $date,
-            $startTime,
-            $duration,
-            'box',
-            $boxId,
-            $excludeId,
-            $cleaningMinutes
-        );
-    }
-
-    public function findOverlappingAppointmentsByDoctor($date, $startTime, int $duration, $doctorId, $excludeId = null, ?int $cleaningMinutes = null): array
-    {
-        return $this->findOverlappingAppointmentsByResource(
-            $date,
-            $startTime,
-            $duration,
-            'doctor',
-            $doctorId,
-            $excludeId,
-            $cleaningMinutes
-        );
-    }
-
-    private function findOverlappingAppointmentsByResource($date, $startTime, int $duration, string $resourceField, $resourceId, $excludeId = null, ?int $cleaningMinutes = null): array
-    {
         if ($startTime instanceof \DateTimeInterface) {
             $start = \DateTimeImmutable::createFromInterface($startTime);
         } else {
@@ -84,9 +58,9 @@ class AppointmentRepository extends ServiceEntityRepository
 
         $qb = $this->createQueryBuilder('a')
             ->where('a.visitDate = :date')
-            ->andWhere(sprintf('a.%s = :resourceId', $resourceField))
+            ->andWhere('a.box = :boxId')
             ->setParameter('date', $dateParam)
-            ->setParameter('resourceId', $resourceId);
+            ->setParameter('boxId', $boxId);
 
         if ($excludeId) {
             $qb->andWhere('a.id != :excludeId')
