@@ -7,6 +7,7 @@ use App\Entity\Odontogram;
 use App\Entity\OdontogramDetail;
 use App\Entity\Patient;
 use App\Entity\Pathology;
+use App\Entity\PathologyType;
 use App\Entity\ToothFace;
 use App\Entity\Treatment;
 use App\Repository\AppointmentRepository;
@@ -73,7 +74,7 @@ final class OdontogramApiController extends AbstractController
         try {
             $this->beginTransaction();
 
-            $odontogram = $this->findReusableOpenOdontogram($patient);
+            $odontogram = $this->odontogramRepository->findOneBy(['visit' => $visit]);
 
             if (!$odontogram instanceof Odontogram) {
                 $odontogram = new Odontogram();
@@ -82,8 +83,6 @@ final class OdontogramApiController extends AbstractController
                 $this->entityManager->persist($odontogram);
                 $this->entityManager->flush();
                 $created = true;
-            } else {
-                $odontogram->setVisit($visit);
             }
 
             $patient->setLastOdontogramId($odontogram->getId());
@@ -255,6 +254,81 @@ final class OdontogramApiController extends AbstractController
         ], Response::HTTP_CREATED);
     }
 
+    #[Route('/{odontogramId}/details/sync', name: 'api_odontogram_detail_sync', requirements: ['odontogramId' => '\d+'], methods: ['POST'])]
+    public function syncDetails(int $odontogramId, Request $request): JsonResponse
+    {
+        $odontogram = $this->odontogramRepository->find($odontogramId);
+        if (!$odontogram instanceof Odontogram) {
+            return $this->json([
+                'error' => 'Odontogram not found',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = $this->getRequestData($request);
+        $entries = $data['entries'] ?? null;
+
+        if (!is_array($entries)) {
+            return $this->json([
+                'error' => 'entries must be an array',
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            $normalizedEntries = $this->normalizeSyncEntries($entries);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->json([
+                'error' => $exception->getMessage(),
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            $this->beginTransaction();
+
+            foreach ($odontogram->getOdontogramDetails() as $detail) {
+                foreach ($detail->getToothFaces() as $face) {
+                    $this->entityManager->remove($face);
+                }
+
+                $this->entityManager->remove($detail);
+            }
+
+            $this->entityManager->flush();
+
+            foreach ($normalizedEntries as $entry) {
+                $pathology = $this->resolvePathologyForSync($odontogram, $entry['pathology_type_id']);
+
+                $detail = new OdontogramDetail();
+                $detail->setOdontogram($odontogram);
+                $detail->setPathology($pathology);
+                $detail->setToothNumber($entry['tooth_number']);
+                $this->entityManager->persist($detail);
+                $this->entityManager->flush();
+
+                foreach ($entry['faces'] as $faceName) {
+                    $face = new ToothFace();
+                    $face->setFaceName($faceName);
+                    $face->setOdontogramDetail($detail);
+                    $this->entityManager->persist($face);
+                }
+            }
+
+            $this->entityManager->flush();
+            $this->commit();
+        } catch (\Throwable $e) {
+            $this->rollBack();
+
+            return $this->json([
+                'error' => 'Could not synchronize the odontogram details',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        return $this->json([
+            'message' => 'Odontogram details synchronized successfully',
+            'odontogram' => $this->serializeOdontogram($odontogram),
+        ], Response::HTTP_OK);
+    }
+
     #[Route('/{id}', name: 'api_odontogram_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function findById(int $id): JsonResponse
     {
@@ -323,35 +397,6 @@ final class OdontogramApiController extends AbstractController
         ], Response::HTTP_OK);
     }
 
-    private function findReusableOpenOdontogram(Patient $patient): ?Odontogram
-    {
-        $lastOdontogramId = $patient->getLastOdontogramId();
-        if ($lastOdontogramId !== null) {
-            $lastOdontogram = $this->odontogramRepository->find($lastOdontogramId);
-
-            if (
-                $lastOdontogram instanceof Odontogram
-                && $lastOdontogram->getStatus() === self::STATUS_OPEN
-                && $lastOdontogram->getVisit()?->getPatient()?->getId() === $patient->getId()
-            ) {
-                return $lastOdontogram;
-            }
-        }
-
-        return $this->odontogramRepository
-            ->createQueryBuilder('o')
-            ->innerJoin('o.visit', 'v')
-            ->innerJoin('v.patient', 'p')
-            ->andWhere('p.id = :patientId')
-            ->andWhere('o.status = :status')
-            ->setParameter('patientId', $patient->getId())
-            ->setParameter('status', self::STATUS_OPEN)
-            ->orderBy('o.id', 'DESC')
-            ->setMaxResults(1)
-            ->getQuery()
-            ->getOneOrNullResult();
-    }
-
     private function getRequestData(Request $request): array
     {
         if ($request->getContentTypeFormat() === 'json') {
@@ -391,6 +436,103 @@ final class OdontogramApiController extends AbstractController
         }
 
         return $cleanFaces;
+    }
+
+    /**
+     * @param array<int|string, mixed> $entries
+     * @return list<array{tooth_number: int, pathology_type_id: int, faces: list<string>}>
+     */
+    private function normalizeSyncEntries(array $entries): array
+    {
+        $normalizedEntries = [];
+
+        foreach ($entries as $entry) {
+            if (!is_array($entry)) {
+                throw new \InvalidArgumentException('Each entry must be an object.');
+            }
+
+            $toothNumber = $entry['tooth_number'] ?? null;
+            $pathologyTypeId = $entry['pathology_type_id'] ?? null;
+            $faces = $entry['faces'] ?? null;
+
+            if (!$this->isPositiveInt($toothNumber) || !$this->isPositiveInt($pathologyTypeId)) {
+                throw new \InvalidArgumentException('Each entry requires valid tooth_number and pathology_type_id.');
+            }
+
+            if (!is_array($faces)) {
+                throw new \InvalidArgumentException('Each entry requires faces as an array.');
+            }
+
+            $normalizedFaces = $this->normalizeFaces($faces);
+            if ($normalizedFaces === []) {
+                throw new \InvalidArgumentException('Each entry requires at least one face.');
+            }
+
+            $normalizedEntries[] = [
+                'tooth_number' => (int) $toothNumber,
+                'pathology_type_id' => (int) $pathologyTypeId,
+                'faces' => $normalizedFaces,
+            ];
+        }
+
+        return $normalizedEntries;
+    }
+
+    private function resolvePathologyForSync(Odontogram $odontogram, int $pathologyTypeId): Pathology
+    {
+        $pathology = $this->pathologyRepository->findOneBy(['pathology_type' => $pathologyTypeId]);
+        if ($pathology instanceof Pathology) {
+            return $pathology;
+        }
+
+        $pathologyType = $this->entityManager->find(PathologyType::class, $pathologyTypeId);
+        if (!$pathologyType instanceof PathologyType) {
+            throw new \InvalidArgumentException('Pathology type not found.');
+        }
+
+        $treatment = $odontogram->getTreatment() ?? $odontogram->getVisit()?->getTreatment();
+        if (!$treatment instanceof Treatment) {
+            $treatment = new Treatment();
+            $treatment->setTreatmentName(sprintf('Protocol %s', $pathologyType->getName() ?? $pathologyTypeId));
+            $treatment->setDescription('Automatic treatment created for odontogram synchronization');
+            $treatment->setEstimatedDuration($pathologyType->getDefaultDuration() ?? 30);
+            $treatment->setStatus('Actiu');
+            $this->entityManager->persist($treatment);
+
+            $odontogram->setTreatment($treatment);
+            if ($odontogram->getVisit() !== null) {
+                $odontogram->getVisit()->setTreatment($treatment);
+            }
+        }
+
+        $pathology = new Pathology();
+        $pathology->setDescription($this->buildPathologyDescription($pathologyType));
+        $pathology->setProtocolColor($this->resolveProtocolColor($pathologyType));
+        $pathology->setVisualType('Protocol');
+        $pathology->setPathologyType($pathologyType);
+        $pathology->setTreatment($treatment);
+        $this->entityManager->persist($pathology);
+
+        return $pathology;
+    }
+
+    private function buildPathologyDescription(PathologyType $pathologyType): string
+    {
+        $name = trim((string) ($pathologyType->getName() ?? ''));
+
+        return $name !== '' ? sprintf('%s protocol mark', $name) : 'Protocol mark';
+    }
+
+    private function resolveProtocolColor(PathologyType $pathologyType): string
+    {
+        $normalizedName = mb_strtolower(trim((string) ($pathologyType->getName() ?? '')));
+
+        return match ($normalizedName) {
+            'càries', 'caries' => '#ff7d72',
+            'neteja' => '#62d5e2',
+            'endodòncia', 'endodoncia' => '#9b8cff',
+            default => '#9aa7b2',
+        };
     }
 
     private function resolveTreatmentName(array $data): string
@@ -485,6 +627,10 @@ final class OdontogramApiController extends AbstractController
                 'description' => $detail->getPathology()?->getDescription(),
                 'protocol_color' => $detail->getPathology()?->getProtocolColor(),
                 'visual_type' => $detail->getPathology()?->getVisualType(),
+                'pathology_type' => [
+                    'id' => $detail->getPathology()?->getPathologyType()?->getId(),
+                    'name' => $detail->getPathology()?->getPathologyType()?->getName(),
+                ],
             ],
             'faces' => $faces,
         ];
