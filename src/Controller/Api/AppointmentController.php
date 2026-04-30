@@ -101,8 +101,9 @@ final class AppointmentController extends AbstractController
                     ? $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName() 
                     : 'Sense Pacient',
                 'doctorName' => $appointment->getDoctor() 
-                    ? $appointment->getDoctor()->getFirstName() 
+                    ? trim($appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames())
                     : 'Sense Doctor',
+                'doctorId' => $appointment->getDoctor() ? $appointment->getDoctor()->getId() : null,
                 'boxId' => $appointment->getBox() ? $appointment->getBox()->getId() : null,
                 'box' => $appointment->getBox() ? $appointment->getBox()->getBoxName() : 'Sense Box',
                 'reason' => $reason,
@@ -137,6 +138,17 @@ final class AppointmentController extends AbstractController
         return $this->json($this->serializeAppointments($appointments));
     }
 
+    #[Route('/statuses', name: 'app_appointment_statuses', methods: ['GET'])]
+    public function statuses(): JsonResponse
+    {
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_STATUSES',
+            'statuses' => self::ALLOWED_STATUSES,
+            'manualStatuses' => self::MANUAL_STATUSES,
+        ]);
+    }
+
     private function isBoxOccupied(AppointmentRepository $repository, Appointment $newApp): bool 
     {
         $overlaps = $repository->findOverlappingAppointments(
@@ -147,6 +159,25 @@ final class AppointmentController extends AbstractController
             $newApp->getId(),
             $newApp->getCleaningMinutes()
         );
+        return count($overlaps) > 0;
+    }
+
+    private function isDoctorOccupied(AppointmentRepository $repository, Appointment $newApp): bool
+    {
+        $doctorId = $newApp->getDoctor()?->getId();
+        if ($doctorId === null) {
+            return false;
+        }
+
+        $overlaps = $repository->findOverlappingAppointmentsForDoctor(
+            $newApp->getVisitDate(),
+            $newApp->getVisitTime(),
+            (int)($newApp->getDurationMinutes() ?? 15),
+            $doctorId,
+            $newApp->getId(),
+            $newApp->getCleaningMinutes()
+        );
+
         return count($overlaps) > 0;
     }
 
@@ -354,6 +385,17 @@ final class AppointmentController extends AbstractController
                         'code' => 'BOX_OCCUPIED',
                         'error' => [
                             'messageKey' => 'appointment.box.occupied',
+                        ],
+                    ], Response::HTTP_CONFLICT);
+                }
+
+                if ($this->isDoctorOccupied($repository, $appointment)) {
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'DOCTOR_OCCUPIED',
+                        'error' => [
+                            'messageKey' => 'appointment.doctor.occupied',
+                            'message' => 'El doctor ya tiene una cita en ese horario.',
                         ],
                     ], Response::HTTP_CONFLICT);
                 }
@@ -589,6 +631,17 @@ final class AppointmentController extends AbstractController
                         'code' => 'BOX_OCCUPIED',
                         'error' => [
                             'messageKey' => 'appointment.box.occupied',
+                        ],
+                    ], Response::HTTP_CONFLICT);
+                }
+
+                if ($this->isDoctorOccupied($repository, $appointment)) {
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'DOCTOR_OCCUPIED',
+                        'error' => [
+                            'messageKey' => 'appointment.doctor.occupied',
+                            'message' => 'El doctor ya tiene una cita en ese horario.',
                         ],
                     ], Response::HTTP_CONFLICT);
                 }
