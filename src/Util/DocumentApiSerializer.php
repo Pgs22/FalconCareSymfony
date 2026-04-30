@@ -36,6 +36,7 @@ final class DocumentApiSerializer
             'patientId' => $patientId,
             'description' => $document->getDescription(),
             'captureDate' => $document->getCaptureDate()?->format(DATE_ATOM),
+            'createdAt' => $document->getCaptureDate()?->format(DATE_ATOM),
             'originalName' => $displayName,
             'original_name' => $displayName,
             'originalFilename' => $displayName,
