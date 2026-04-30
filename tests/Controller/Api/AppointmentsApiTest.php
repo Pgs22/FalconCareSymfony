@@ -299,6 +299,53 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertSame('Falta consentiment', $payload['appointment']['status']);
     }
 
+    public function testCreateRejectsOverlappingAppointmentForSameDoctorInDifferentBox(): void
+    {
+        $client = static::createClient();
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $hasher = $client->getContainer()->get(UserPasswordHasherInterface::class);
+
+        $adminEmail = 'appointments-admin-doctor-occupied@test.falconcare.local';
+        $admin = $em->getRepository(User::class)->findOneBy(['email' => $adminEmail]);
+        if ($admin === null) {
+            $admin = new User();
+            $admin->setEmail($adminEmail);
+            $admin->setPassword($hasher->hashPassword($admin, 'secret123'));
+            $admin->setRoles(['ROLE_ADMIN']);
+            $em->persist($admin);
+            $em->flush();
+        }
+
+        $fixture = self::createAppointmentFixture($em, 'DOCBUSY01');
+        $existingAppointment = $fixture['appointment'];
+        $patient = $fixture['patient'];
+
+        $otherBox = new Box();
+        $otherBox->setBoxName('DoctorBusyOtherBox');
+        $otherBox->setStatus(true);
+        $otherBox->setCapacity(1);
+        $em->persist($otherBox);
+        $em->flush();
+
+        $headers = self::getAuthHeadersFor($client, $adminEmail, 'secret123');
+
+        $client->request('POST', '/api/appointment/create', [], [], $headers, json_encode([
+            'patient' => $patient->getId(),
+            'doctor' => $existingAppointment->getDoctor()?->getId(),
+            'box' => $otherBox->getId(),
+            'visitDate' => '2026-04-24',
+            'visitTime' => '13:45',
+            'durationMinutes' => 30,
+            'consultationReason' => 'Solape doctor',
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_CONFLICT);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('DOCTOR_OCCUPIED', $payload['code']);
+        self::assertSame('appointment.doctor.occupied', $payload['error']['messageKey']);
+    }
+
     public function testUpdateAllowsEditingCreateFormFieldsAndDuration(): void
     {
         $client = static::createClient();
