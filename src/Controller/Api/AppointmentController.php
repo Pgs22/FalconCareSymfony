@@ -138,6 +138,17 @@ final class AppointmentController extends AbstractController
         return $this->json($this->serializeAppointments($appointments));
     }
 
+    #[Route('/statuses', name: 'app_appointment_statuses', methods: ['GET'])]
+    public function statuses(): JsonResponse
+    {
+        return $this->json([
+            'ok' => true,
+            'code' => 'APPOINTMENT_STATUSES',
+            'statuses' => self::ALLOWED_STATUSES,
+            'manualStatuses' => self::MANUAL_STATUSES,
+        ]);
+    }
+
     private function isBoxOccupied(AppointmentRepository $repository, Appointment $newApp): bool 
     {
         $overlaps = $repository->findOverlappingAppointments(

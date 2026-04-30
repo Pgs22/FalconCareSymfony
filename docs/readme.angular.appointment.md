@@ -33,6 +33,35 @@ Flujo esperado de negocio:
 
 ## 3) Endpoint para cambiar estado manualmente
 
+Endpoint para cargar opciones:
+
+- `GET /api/appointment/statuses`
+
+Respuesta OK (200):
+
+```json
+{
+  "ok": true,
+  "code": "APPOINTMENT_STATUSES",
+  "statuses": [
+    "Programada",
+    "Falta consentiment",
+    "En curs",
+    "Finalitzada",
+    "Confirmada",
+    "Arribada",
+    "Cancelada"
+  ],
+  "manualStatuses": [
+    "Confirmada",
+    "Arribada",
+    "Cancelada"
+  ]
+}
+```
+
+Angular debe usar `manualStatuses` para pintar el `<select>`.
+
 Endpoint:
 
 - `PATCH /api/appointment/{id}/status`
@@ -123,6 +152,13 @@ export type ManualAppointmentStatus = typeof MANUAL_APPOINTMENT_STATUSES[number]
 ```ts
 updateStatus(id: number, status: ManualAppointmentStatus) {
   return this.http.patch(`/api/appointment/${id}/status`, { status });
+}
+
+getAppointmentStatuses() {
+  return this.http.get<{
+    statuses: AppointmentStatus[];
+    manualStatuses: ManualAppointmentStatus[];
+  }>(`/api/appointment/statuses`);
 }
 
 openAppointment(id: number) {

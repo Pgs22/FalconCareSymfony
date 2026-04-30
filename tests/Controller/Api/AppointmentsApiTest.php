@@ -567,6 +567,22 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertSame(['Confirmada', 'Arribada', 'Cancelada'], $payload['error']['allowedStatuses']);
     }
 
+    public function testStatusesEndpointReturnsManualSelectOptions(): void
+    {
+        $client = static::createClient();
+
+        $client->request('GET', '/api/appointment/statuses');
+
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+
+        self::assertTrue($payload['ok']);
+        self::assertSame('APPOINTMENT_STATUSES', $payload['code']);
+        self::assertSame(['Confirmada', 'Arribada', 'Cancelada'], $payload['manualStatuses']);
+        self::assertContains('Programada', $payload['statuses']);
+        self::assertContains('Finalitzada', $payload['statuses']);
+    }
+
     public function testOpenAppointmentSetsAndReturnsInProgressStatus(): void
     {
         $client = static::createClient();
