@@ -680,6 +680,8 @@ final class AppointmentController extends AbstractController
     #[Route('/{id}/delete', name: 'app_appointment_delete_legacy', requirements: ['id' => '\d+'], methods: ['DELETE', 'POST'])]
     public function delete(Appointment $appointment, EntityManagerInterface $entityManager): JsonResponse
     {
+        $appointmentId = $appointment->getId();
+
         $entityManager->remove($appointment);
         $entityManager->flush();
 
@@ -687,7 +689,7 @@ final class AppointmentController extends AbstractController
             'ok' => true,
             'code' => 'APPOINTMENT_DELETED',
             'messageKey' => 'appointment.deleted',
-            'id' => $appointment->getId(),
+            'id' => $appointmentId,
         ]);
     }
 }
