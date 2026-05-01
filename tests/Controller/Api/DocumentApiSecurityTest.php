@@ -36,7 +36,7 @@ final class DocumentApiSecurityTest extends WebTestCase
             'HTTP_AUTHORIZATION' => 'Bearer ' . $token,
         ];
 
-        $suffix = substr(uniqid('', true), 0, 8);
+        $suffix = bin2hex(random_bytes(6));
         $makePatient = static function (string $tag) use ($client, $suffix): int {
             $body = [
                 'identityDocument' => 'DOC-' . $tag . '-' . $suffix,

@@ -18,12 +18,42 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Route('/api/documents')]
 #[OA\Tag(name: 'Documents')]
 final class DocumentApiController extends AbstractController
 {
+    private const MAX_UPLOAD_BYTES = 10_485_760; // 10 MiB
+
+    /** @var list<string> */
+    private const ALLOWED_MIME_TYPES = [
+        'application/pdf',
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+        'image/gif',
+        'image/bmp',
+        'image/tiff',
+        'application/dicom',
+        'application/dicom+json',
+    ];
+
+    /** @var array<string, string> */
+    private const ALLOWED_EXTENSIONS = [
+        'pdf' => 'application/pdf',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+        'bmp' => 'image/bmp',
+        'tif' => 'image/tiff',
+        'tiff' => 'image/tiff',
+        'dcm' => 'application/dicom',
+    ];
+
     public function __construct(
         private readonly DocumentRepository $documentRepository,
         private readonly PatientRecordsAccessChecker $patientRecordsAccess,
@@ -54,26 +84,27 @@ final class DocumentApiController extends AbstractController
 
         $patientId = PatientIriParser::parsePatientId($request->query->get('patientId') ?? $request->query->get('patient'));
         if ($patientId === null) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Query parameter patientId (or patient IRI) is required.',
-            ], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_PATIENT_FILTER_REQUIRED',
+                'Query parameter patientId (or patient IRI) is required.'
+            );
         }
 
         $patient = $patientRepository->findById($patientId);
         if (!$patient) {
-            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'PATIENT_NOT_FOUND', 'Patient not found');
         }
 
         $dateString = $request->query->get('date');
         if (!$dateString) {
-            return $this->json(['error' => 'Date parameter is required'], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(Response::HTTP_BAD_REQUEST, 'DATE_REQUIRED', 'Date parameter is required');
         }
 
         try {
             $date = new \DateTime((string) $dateString);
         } catch (\Exception) {
-            return $this->json(['error' => 'Invalid date format. Use Y-m-d'], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(Response::HTTP_BAD_REQUEST, 'INVALID_DATE', 'Invalid date format. Use Y-m-d');
         }
 
         $page = max(1, (int) $request->query->get('page', '1'));
@@ -107,7 +138,7 @@ final class DocumentApiController extends AbstractController
 
         $patients = $patientRepository->findByIdentityDocument($identityDocument);
         if ($patients === []) {
-            return $this->json(['error' => 'Paciente no encontrado'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'PATIENT_NOT_FOUND', 'Patient not found');
         }
 
         $patient = $patients[0];
@@ -147,30 +178,39 @@ final class DocumentApiController extends AbstractController
 
         $patientId = PatientIriParser::parsePatientId($request->query->get('patientId'));
         if ($patientId === null) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Query parameter patientId is required and must match the document\'s patient.',
-            ], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_PATIENT_ID_REQUIRED',
+                'Query parameter patientId is required and must match the document\'s patient.'
+            );
         }
 
         $document = $this->documentRepository->findById($id);
         if (!$document || !$document->getPatient()) {
-            return $this->json(['message' => 'Document not found'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'DOCUMENT_NOT_FOUND', 'Document not found');
         }
 
         if ($document->getPatient()->getId() !== $patientId) {
-            return $this->json([
-                'error' => 'Forbidden',
-                'message' => 'Document does not belong to the indicated patient.',
-            ], Response::HTTP_FORBIDDEN);
+            return $this->apiError(
+                Response::HTTP_FORBIDDEN,
+                'DOCUMENT_PATIENT_MISMATCH',
+                'Document does not belong to the indicated patient.'
+            );
         }
 
         $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
         if (!is_file($filePath)) {
-            return $this->json(['message' => 'File not found on server'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'DOCUMENT_FILE_NOT_FOUND', 'File not found on server');
         }
 
-        return $this->file($filePath, $document->getOriginalName() ?? $document->getFilePath());
+        $downloadName = $document->getOriginalName() ?? $document->getFilePath();
+
+        return $this->file(
+            $filePath,
+            $downloadName,
+            ResponseHeaderBag::DISPOSITION_INLINE,
+            ['Content-Type' => $document->getType() ?? 'application/octet-stream']
+        );
     }
 
     #[Route('', name: 'api_document_list', methods: ['GET'])]
@@ -197,10 +237,11 @@ final class DocumentApiController extends AbstractController
 
         $patientId = $this->resolvePatientFilterFromQuery($request);
         if ($patientId === null) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Provide patientId, patient.id, or patient (IRI) to list documents. Global listing is disabled.',
-            ], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_PATIENT_FILTER_REQUIRED',
+                'Provide patientId, patient.id, or patient (IRI) to list documents. Global listing is disabled.'
+            );
         }
 
         return $this->jsonDocumentsForPatientId($request, $patientId, $patientRepository);
@@ -241,32 +282,81 @@ final class DocumentApiController extends AbstractController
 
         $uploadedFile = $request->files->get('file');
         if (!$uploadedFile instanceof UploadedFile) {
-            return $this->json(['error' => 'No file provided'], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(Response::HTTP_BAD_REQUEST, 'DOCUMENT_FILE_REQUIRED', 'No file provided');
+        }
+
+        if (\UPLOAD_ERR_INI_SIZE === $uploadedFile->getError() || \UPLOAD_ERR_FORM_SIZE === $uploadedFile->getError()) {
+            return $this->apiError(Response::HTTP_REQUEST_ENTITY_TOO_LARGE, 'DOCUMENT_FILE_TOO_LARGE', 'Uploaded file exceeds size limit.');
+        }
+        if ($uploadedFile->getError() !== \UPLOAD_ERR_OK) {
+            return $this->apiError(Response::HTTP_BAD_REQUEST, 'DOCUMENT_FILE_UPLOAD_ERROR', 'Upload error detected.');
         }
 
         $patientRaw = $request->request->get('patient');
         $patientId = PatientIriParser::parsePatientId($patientRaw);
         if ($patientId === null) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Field "patient" must be a numeric id or an IRI containing /api/patients/{id}.',
-            ], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_PATIENT_INVALID',
+                'Field "patient" must be a numeric id or an IRI containing /api/patients/{id}.'
+            );
         }
 
         $patient = $patientRepository->findById($patientId);
         if (!$patient) {
-            return $this->json(['error' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'PATIENT_NOT_FOUND', 'Patient not found');
+        }
+
+        $size = $uploadedFile->getSize() ?? 0;
+        if ($size <= 0) {
+            return $this->apiError(Response::HTTP_BAD_REQUEST, 'DOCUMENT_FILE_EMPTY', 'Uploaded file is empty.');
+        }
+        if ($size > self::MAX_UPLOAD_BYTES) {
+            return $this->apiError(
+                Response::HTTP_REQUEST_ENTITY_TOO_LARGE,
+                'DOCUMENT_FILE_TOO_LARGE',
+                'Uploaded file exceeds the maximum allowed size (10 MiB).'
+            );
+        }
+
+        $extension = strtolower((string) $uploadedFile->getClientOriginalExtension());
+        if ($extension === '' || !\array_key_exists($extension, self::ALLOWED_EXTENSIONS)) {
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_FILE_EXTENSION_NOT_ALLOWED',
+                'File extension is not allowed.'
+            );
+        }
+
+        $detectedMime = $uploadedFile->getMimeType() ?: $uploadedFile->getClientMimeType() ?: 'application/octet-stream';
+        if (!\in_array($detectedMime, self::ALLOWED_MIME_TYPES, true)) {
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_FILE_MIME_NOT_ALLOWED',
+                'File MIME type is not allowed.',
+                ['mimeType' => $detectedMime]
+            );
+        }
+
+        $typeRaw = trim((string) $request->request->get('type', ''));
+        if ($typeRaw !== '' && !\in_array($typeRaw, self::ALLOWED_MIME_TYPES, true)) {
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_TYPE_NOT_ALLOWED',
+                'Provided type is not allowed.',
+                ['type' => $typeRaw]
+            );
         }
 
         try {
             $filename = $this->handleFileStorage($uploadedFile, $patient);
         } catch (FileException) {
-            return $this->json(['error' => 'Could not upload file'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            return $this->apiError(Response::HTTP_INTERNAL_SERVER_ERROR, 'DOCUMENT_FILE_STORE_FAILED', 'Could not upload file');
         }
 
         $type = trim((string) $request->request->get('type', ''));
         if ($type === '') {
-            $type = $uploadedFile->getClientMimeType() ?: 'application/octet-stream';
+            $type = $detectedMime;
         }
 
         $description = $request->request->get('description');
@@ -310,22 +400,20 @@ final class DocumentApiController extends AbstractController
 
         $patientId = PatientIriParser::parsePatientId($request->query->get('patientId'));
         if ($patientId === null) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Query parameter patientId is required.',
-            ], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(Response::HTTP_BAD_REQUEST, 'DOCUMENT_PATIENT_ID_REQUIRED', 'Query parameter patientId is required.');
         }
 
         $document = $this->documentRepository->findById($id);
         if (!$document || !$document->getPatient()) {
-            return $this->json(['message' => 'Document not found'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'DOCUMENT_NOT_FOUND', 'Document not found');
         }
 
         if ($document->getPatient()->getId() !== $patientId) {
-            return $this->json([
-                'error' => 'Forbidden',
-                'message' => 'Document does not belong to the indicated patient.',
-            ], Response::HTTP_FORBIDDEN);
+            return $this->apiError(
+                Response::HTTP_FORBIDDEN,
+                'DOCUMENT_PATIENT_MISMATCH',
+                'Document does not belong to the indicated patient.'
+            );
         }
 
         return $this->json(DocumentApiSerializer::toArray($document, $this->apiBaseUrl), Response::HTTP_OK);
@@ -352,30 +440,43 @@ final class DocumentApiController extends AbstractController
 
         $document = $this->documentRepository->findById($id);
         if (!$document) {
-            return $this->json(['message' => 'Document not found'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'DOCUMENT_NOT_FOUND', 'Document not found');
         }
 
         $patientId = PatientIriParser::parsePatientId($request->query->get('patientId'));
         if ($patientId === null) {
-            return $this->json([
-                'error' => 'Bad request',
-                'message' => 'Query parameter patientId is required.',
-            ], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(Response::HTTP_BAD_REQUEST, 'DOCUMENT_PATIENT_ID_REQUIRED', 'Query parameter patientId is required.');
         }
 
         if (!$document->getPatient() || $document->getPatient()->getId() !== $patientId) {
-            return $this->json([
-                'error' => 'Forbidden',
-                'message' => 'Document does not belong to the indicated patient.',
-            ], Response::HTTP_FORBIDDEN);
+            return $this->apiError(
+                Response::HTTP_FORBIDDEN,
+                'DOCUMENT_PATIENT_MISMATCH',
+                'Document does not belong to the indicated patient.'
+            );
         }
 
         $data = json_decode($request->getContent(), true);
         if (!\is_array($data)) {
-            return $this->json(['error' => 'Invalid JSON'], Response::HTTP_BAD_REQUEST);
+            return $this->apiError(Response::HTTP_BAD_REQUEST, 'INVALID_JSON', 'Invalid JSON');
         }
 
-        $this->documentRepository->edit($document, $data);
+        if (!\array_key_exists('description', $data)) {
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_DESCRIPTION_REQUIRED',
+                'Field "description" is required for document note updates.'
+            );
+        }
+        if ($data['description'] !== null && !\is_string($data['description'])) {
+            return $this->apiError(
+                Response::HTTP_BAD_REQUEST,
+                'DOCUMENT_DESCRIPTION_INVALID',
+                'Field "description" must be a string or null.'
+            );
+        }
+
+        $this->documentRepository->edit($document, ['description' => $data['description']]);
 
         return $this->json(DocumentApiSerializer::toArray($document, $this->apiBaseUrl), Response::HTTP_OK);
     }
@@ -403,16 +504,16 @@ final class DocumentApiController extends AbstractController
 
         $document = $this->documentRepository->findById($documentId);
         if (!$document) {
-            return $this->json(['error' => 'Document not found'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'DOCUMENT_NOT_FOUND', 'Document not found');
         }
 
         if (!$document->getPatient() || $document->getPatient()->getId() !== $patientId) {
-            return $this->json(['error' => 'Document does not belong to this patient'], Response::HTTP_FORBIDDEN);
+            return $this->apiError(Response::HTTP_FORBIDDEN, 'DOCUMENT_PATIENT_MISMATCH', 'Document does not belong to this patient');
         }
 
         $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
         if (is_file($filePath)) {
-            unlink($filePath);
+            @unlink($filePath);
         }
 
         $this->documentRepository->delete($document);
@@ -424,7 +525,7 @@ final class DocumentApiController extends AbstractController
     {
         $patient = $patientRepository->findById($patientId);
         if (!$patient) {
-            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->apiError(Response::HTTP_NOT_FOUND, 'PATIENT_NOT_FOUND', 'Patient not found');
         }
 
         $documents = $this->documentRepository->findByPatientOrdered($patient);
@@ -454,10 +555,11 @@ final class DocumentApiController extends AbstractController
 
     private function clinicalForbidden(): JsonResponse
     {
-        return $this->json([
-            'error' => 'Forbidden',
-            'message' => 'You do not have permission to access patient documents.',
-        ], Response::HTTP_FORBIDDEN);
+        return $this->apiError(
+            Response::HTTP_FORBIDDEN,
+            'DOCUMENT_ACCESS_FORBIDDEN',
+            'You do not have permission to access patient documents.'
+        );
     }
 
     private function handleFileStorage(UploadedFile $file, Patient $patient): string
@@ -469,5 +571,19 @@ final class DocumentApiController extends AbstractController
         $file->move($uploadDir, $newFilename);
 
         return $newFilename;
+    }
+
+    /**
+     * @param array<string, mixed> $details
+     */
+    private function apiError(int $status, string $code, string $message, array $details = []): JsonResponse
+    {
+        return $this->json([
+            'error' => Response::$statusTexts[$status] ?? 'Error',
+            'code' => $code,
+            'message' => $message,
+            'status' => $status,
+            'details' => (object) $details,
+        ], $status);
     }
 }
