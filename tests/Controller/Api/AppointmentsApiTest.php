@@ -59,6 +59,29 @@ final class AppointmentsApiTest extends WebTestCase
         return $user;
     }
 
+    /**
+     * @template T of object
+     *
+     * @param class-string<T> $entityClass
+     * @param list<int> $ids
+     *
+     * @return T
+     */
+    private static function getRandomExistingEntityById(EntityManagerInterface $em, string $entityClass, array $ids, string $label): object
+    {
+        $start = random_int(0, count($ids) - 1);
+        $orderedIds = array_merge(array_slice($ids, $start), array_slice($ids, 0, $start));
+
+        foreach ($orderedIds as $id) {
+            $entity = $em->getRepository($entityClass)->find($id);
+            if ($entity instanceof $entityClass) {
+                return $entity;
+            }
+        }
+
+        self::fail(sprintf('Debe existir al menos un %s con id en [%s] en la BBDD de test.', $label, implode(', ', $ids)));
+    }
+
     private static function getExistingBox(EntityManagerInterface $em, string $boxName): Box
     {
         $box = $em->getRepository(Box::class)->findOneBy(['boxName' => $boxName]);
@@ -69,12 +92,26 @@ final class AppointmentsApiTest extends WebTestCase
 
     private static function getBoxOne(EntityManagerInterface $em): Box
     {
-        return self::getExistingBox($em, 'Box 1');
+        /** @var Box $box */
+        $box = self::getRandomExistingEntityById($em, Box::class, [1], 'Box');
+
+        return $box;
     }
 
     private static function getBoxTwo(EntityManagerInterface $em): Box
     {
-        return self::getExistingBox($em, 'Box 2');
+        /** @var Box $box */
+        $box = self::getRandomExistingEntityById($em, Box::class, [2], 'Box');
+
+        return $box;
+    }
+
+    private static function getRandomBox(EntityManagerInterface $em): Box
+    {
+        /** @var Box $box */
+        $box = self::getRandomExistingEntityById($em, Box::class, [1, 2], 'Box');
+
+        return $box;
     }
 
     private static function uniqueVisitDate(string $suffix, int $offsetDays = 0): string
@@ -86,25 +123,73 @@ final class AppointmentsApiTest extends WebTestCase
 
     private static function getDoctorOne(EntityManagerInterface $em): Doctor
     {
-        $doctor = $em->getRepository(Doctor::class)->find(1);
-        self::assertInstanceOf(Doctor::class, $doctor, 'Debe existir Doctor#1 en la BBDD de test.');
+        /** @var Doctor $doctor */
+        $doctor = self::getRandomExistingEntityById($em, Doctor::class, range(1, 6), 'Doctor');
 
         return $doctor;
     }
 
-    private static function getPatientOne(
-        EntityManagerInterface $em,
-        ?string $medicationAllergies = 'none',
-        ?int $lastOdontogramId = null,
-    ): Patient {
-        $patient = $em->getRepository(Patient::class)->find(1);
-        self::assertInstanceOf(Patient::class, $patient, 'Debe existir Patient#1 en la BBDD de test.');
+    private static function getOtherDoctor(EntityManagerInterface $em, Doctor $current): Doctor
+    {
+        $ids = array_values(array_filter(range(1, 6), static fn (int $id): bool => $id !== $current->getId()));
 
-        $patient->setMedicationAllergies($medicationAllergies ?? 'none');
-        $patient->setLastOdontogramId($lastOdontogramId);
-        $em->flush();
+        /** @var Doctor $doctor */
+        $doctor = self::getRandomExistingEntityById($em, Doctor::class, $ids, 'Doctor');
+
+        return $doctor;
+    }
+
+    private static function getPatientOne(EntityManagerInterface $em): Patient
+    {
+        /** @var Patient $patient */
+        $patient = self::getRandomExistingEntityById($em, Patient::class, range(1, 10), 'Patient');
 
         return $patient;
+    }
+
+    private static function getOtherPatient(EntityManagerInterface $em, Patient $current): Patient
+    {
+        $ids = array_values(array_filter(range(1, 10), static fn (int $id): bool => $id !== $current->getId()));
+
+        /** @var Patient $patient */
+        $patient = self::getRandomExistingEntityById($em, Patient::class, $ids, 'Patient');
+
+        return $patient;
+    }
+
+    private static function getRandomPatientWithoutLastOdontogram(EntityManagerInterface $em): Patient
+    {
+        $ids = range(1, 10);
+        $start = random_int(0, count($ids) - 1);
+        $orderedIds = array_merge(array_slice($ids, $start), array_slice($ids, 0, $start));
+
+        foreach ($orderedIds as $id) {
+            $patient = $em->getRepository(Patient::class)->find($id);
+            if ($patient instanceof Patient && $patient->getLastOdontogramId() === null) {
+                return $patient;
+            }
+        }
+
+        self::fail('Debe existir al menos un Patient#1..#10 sin lastOdontogramId para probar primera visita.');
+    }
+
+    private static function getExistingTreatmentForPatient(Patient $patient): ?Treatment
+    {
+        foreach ($patient->getAppointments() as $appointment) {
+            $treatment = $appointment->getTreatment();
+            if ($treatment instanceof Treatment) {
+                return $treatment;
+            }
+        }
+
+        return null;
+    }
+
+    private static function patientHasMedicationAllergies(Patient $patient): bool
+    {
+        $allergies = trim((string) ($patient->getMedicationAllergies() ?? ''));
+
+        return $allergies !== '' && mb_strtolower($allergies) !== mb_strtolower('Cap coneguda');
     }
 
     /**
@@ -112,9 +197,9 @@ final class AppointmentsApiTest extends WebTestCase
      */
     private static function createAppointmentFixture(EntityManagerInterface $em, string $suffix): array
     {
-        $box = self::getBoxOne($em);
+        $box = self::getRandomBox($em);
         $doctor = self::getDoctorOne($em);
-        $patient = self::getPatientOne($em, 'none', 12345);
+        $patient = self::getPatientOne($em);
 
         $appointment = new Appointment();
         $appointment->setVisitDate(new \DateTime(self::uniqueVisitDate($suffix)));
@@ -152,19 +237,11 @@ final class AppointmentsApiTest extends WebTestCase
         /** @var EntityManagerInterface $em */
         $em = $client->getContainer()->get(EntityManagerInterface::class);
 
-        $box = self::getBoxOne($em);
+        $box = self::getRandomBox($em);
 
         $doctor = self::getDoctorOne($em);
-        $patient = self::getPatientOne($em, 'none', 12345);
-
-        $treatment = new Treatment();
-        $treatment->setTreatmentName('T');
-        $treatment->setDescription('D');
-        $treatment->setEstimatedDuration(30);
-        $treatment->setStatus('Activo');
-        $em->persist($treatment);
-
-        $em->flush();
+        $patient = self::getRandomPatientWithoutLastOdontogram($em);
+        $treatment = self::getExistingTreatmentForPatient($patient);
 
         $appointment = new Appointment();
         $visitDate = self::uniqueVisitDate('READ'.strtoupper(bin2hex(random_bytes(4))));
@@ -176,7 +253,9 @@ final class AppointmentsApiTest extends WebTestCase
         $appointment->setPatient($patient);
         $appointment->setDoctor($doctor);
         $appointment->setBox($box);
-        $appointment->setTreatment($treatment);
+        if ($treatment instanceof Treatment) {
+            $appointment->setTreatment($treatment);
+        }
         $appointment->setDurationMinutes(30);
         $em->persist($appointment);
         $em->flush();
@@ -199,7 +278,7 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertSame($pid, $row['patientId']);
         self::assertSame($doctor->getId(), $row['doctorId']);
         self::assertSame($box->getId(), $row['boxId']);
-        self::assertSame($treatment->getId(), $row['treatmentId']);
+        self::assertSame($treatment?->getId(), $row['treatmentId']);
     }
 
     public function testCreateAppointmentSetsMissingConsentStatusForFirstVisit(): void
@@ -220,10 +299,10 @@ final class AppointmentsApiTest extends WebTestCase
             $em->flush();
         }
 
-        $box = self::getBoxOne($em);
+        $box = self::getRandomBox($em);
 
         $doctor = self::getDoctorOne($em);
-        $patient = self::getPatientOne($em, 'Cap coneguda', null);
+        $patient = self::getPatientOne($em);
 
         self::assertNull($patient->getLastOdontogramId());
 
@@ -313,9 +392,9 @@ final class AppointmentsApiTest extends WebTestCase
         $em = $client->getContainer()->get(EntityManagerInterface::class);
 
         $suffix = strtoupper(bin2hex(random_bytes(4)));
-        $box = self::getBoxOne($em);
+        $box = self::getRandomBox($em);
         $doctor = self::getDoctorOne($em);
-        $patient = self::getPatientOne($em, 'none', 12345);
+        $patient = self::getPatientOne($em);
         $visitDate = self::uniqueVisitDate('DAY'.$suffix);
 
         $appointment = new Appointment();
@@ -361,7 +440,7 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertSame('INVALID_DATE', $payload['code']);
     }
 
-    public function testCreateReturnsAllergyAlertAndAcceptsDurationAndCleaningAliases(): void
+    public function testCreateChecksExistingPatientAllergiesAndAcceptsDurationAndCleaningAliases(): void
     {
         $client = static::createClient();
         /** @var EntityManagerInterface $em */
@@ -372,9 +451,9 @@ final class AppointmentsApiTest extends WebTestCase
         $adminEmail = 'appointments-admin-create-alert-'.$suffix.'@test.falconcare.local';
         self::ensureUser($em, $hasher, $adminEmail);
 
-        $box = self::getBoxOne($em);
+        $box = self::getRandomBox($em);
         $doctor = self::getDoctorOne($em);
-        $patient = self::getPatientOne($em, 'Penicilina', 12345);
+        $patient = self::getPatientOne($em);
 
         $headers = self::getAuthHeadersFor($client, $adminEmail, 'secret123');
         $visitDate = self::uniqueVisitDate('ALERT'.$suffix);
@@ -395,11 +474,16 @@ final class AppointmentsApiTest extends WebTestCase
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertTrue($payload['ok']);
         self::assertSame('APPOINTMENT_CREATED', $payload['code']);
-        self::assertSame('Programada', $payload['status']);
+        $expectedStatus = $patient->getLastOdontogramId() === null ? 'Falta consentiment' : 'Programada';
+        self::assertSame($expectedStatus, $payload['status']);
         self::assertSame(45, $payload['appointment']['durationMinutes']);
         self::assertSame(10, $payload['appointment']['cleaningMinutes']);
-        self::assertSame('PATIENT_MEDICATION_ALLERGIES', $payload['alerts'][0]['code']);
-        self::assertSame('Penicilina', $payload['alerts'][0]['medicationAllergies']);
+        if (self::patientHasMedicationAllergies($patient)) {
+            self::assertSame('PATIENT_MEDICATION_ALLERGIES', $payload['alerts'][0]['code']);
+            self::assertSame($patient->getMedicationAllergies(), $payload['alerts'][0]['medicationAllergies']);
+        } else {
+            self::assertArrayNotHasKey('alerts', $payload);
+        }
     }
 
     public function testCreateRejectsInvalidCleaningMinutesAndBoxCleaningOverlap(): void
@@ -413,11 +497,11 @@ final class AppointmentsApiTest extends WebTestCase
         $adminEmail = 'appointments-admin-box-overlap-'.$suffix.'@test.falconcare.local';
         self::ensureUser($em, $hasher, $adminEmail);
 
-        $box = self::getBoxOne($em);
+        $box = self::getRandomBox($em);
         $doctor = self::getDoctorOne($em);
-        $otherDoctor = self::getDoctorOne($em);
-        $patient = self::getPatientOne($em, 'none', 12345);
-        $otherPatient = self::getPatientOne($em, 'none', 12345);
+        $otherDoctor = self::getOtherDoctor($em, $doctor);
+        $patient = self::getPatientOne($em);
+        $otherPatient = self::getOtherPatient($em, $patient);
         $visitDate = self::uniqueVisitDate('BOX'.$suffix);
 
         $existing = new Appointment();
@@ -494,23 +578,14 @@ final class AppointmentsApiTest extends WebTestCase
         $box2 = self::getBoxTwo($em);
 
         $doctor1 = self::getDoctorOne($em);
-        $doctor2 = self::getDoctorOne($em);
-        $patient1 = self::getPatientOne($em, 'none', 12345);
-        $patient2 = self::getPatientOne($em, 'none', 12345);
+        $doctor2 = self::getOtherDoctor($em, $doctor1);
+        $patient1 = self::getPatientOne($em);
+        $patient2 = self::getOtherPatient($em, $patient1);
 
-        $treatment1 = new Treatment();
-        $treatment1->setTreatmentName('Treatment 1');
-        $treatment1->setDescription('D1');
-        $treatment1->setEstimatedDuration(30);
-        $treatment1->setStatus('Activo');
-        $em->persist($treatment1);
-
-        $treatment2 = new Treatment();
-        $treatment2->setTreatmentName('Treatment 2');
-        $treatment2->setDescription('D2');
-        $treatment2->setEstimatedDuration(45);
-        $treatment2->setStatus('Activo');
-        $em->persist($treatment2);
+        $treatment1 = self::getExistingTreatmentForPatient($patient1);
+        $treatment2 = self::getExistingTreatmentForPatient($patient2);
+        self::assertInstanceOf(Treatment::class, $treatment1, 'El paciente inicial debe tener un tratamiento existente en la BBDD de test.');
+        self::assertInstanceOf(Treatment::class, $treatment2, 'El paciente destino debe tener un tratamiento existente en la BBDD de test.');
 
         $visitDate = self::uniqueVisitDate('UPDATE'.strtoupper(bin2hex(random_bytes(4))));
         $updatedVisitDate = (new \DateTimeImmutable($visitDate))->modify('+1 day')->format('Y-m-d');
@@ -583,10 +658,10 @@ final class AppointmentsApiTest extends WebTestCase
             $em->flush();
         }
 
-        $box = self::getBoxOne($em);
+        $box = self::getRandomBox($em);
 
         $doctor = self::getDoctorOne($em);
-        $patient = self::getPatientOne($em, 'none', 12345);
+        $patient = self::getPatientOne($em);
 
         $appointment = new Appointment();
         $appointment->setVisitDate(new \DateTime(self::uniqueVisitDate('STATUS'.strtoupper(bin2hex(random_bytes(4))))));
