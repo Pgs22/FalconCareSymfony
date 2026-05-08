@@ -295,7 +295,7 @@ final class OdontogramApiController extends AbstractController
             $this->entityManager->flush();
 
             foreach ($normalizedEntries as $entry) {
-                $pathology = $this->resolvePathologyForSync($odontogram, $entry['pathology_type_id']);
+                $pathology = $this->resolvePathologyForSync($odontogram, $entry);
 
                 $detail = new OdontogramDetail();
                 $detail->setOdontogram($odontogram);
@@ -440,7 +440,14 @@ final class OdontogramApiController extends AbstractController
 
     /**
      * @param array<int|string, mixed> $entries
-     * @return list<array{tooth_number: int, pathology_type_id: int, faces: list<string>}>
+     * @return list<array{
+     *   tooth_number: int,
+     *   pathology_type_id: int,
+     *   pathology_id: ?int,
+     *   protocol_color: ?string,
+     *   visual_type: ?string,
+     *   faces: list<string>
+     * }>
      */
     private function normalizeSyncEntries(array $entries): array
     {
@@ -468,9 +475,20 @@ final class OdontogramApiController extends AbstractController
                 throw new \InvalidArgumentException('Each entry requires at least one face.');
             }
 
+            $pathologyId = $entry['pathology_id'] ?? null;
+            if ($pathologyId !== null && !$this->isPositiveInt($pathologyId)) {
+                throw new \InvalidArgumentException('Each entry pathology_id must be a positive integer when provided.');
+            }
+
+            $protocolColor = $this->normalizeProtocolColor($entry['protocol_color'] ?? null);
+            $visualType = $this->normalizeVisualType($entry['visual_type'] ?? null);
+
             $normalizedEntries[] = [
                 'tooth_number' => (int) $toothNumber,
                 'pathology_type_id' => (int) $pathologyTypeId,
+                'pathology_id' => $pathologyId !== null ? (int) $pathologyId : null,
+                'protocol_color' => $protocolColor,
+                'visual_type' => $visualType,
                 'faces' => $normalizedFaces,
             ];
         }
@@ -478,9 +496,33 @@ final class OdontogramApiController extends AbstractController
         return $normalizedEntries;
     }
 
-    private function resolvePathologyForSync(Odontogram $odontogram, int $pathologyTypeId): Pathology
+    /**
+     * @param array{
+     *   pathology_type_id: int,
+     *   pathology_id: ?int,
+     *   protocol_color: ?string,
+     *   visual_type: ?string
+     * } $entry
+     */
+    private function resolvePathologyForSync(Odontogram $odontogram, array $entry): Pathology
     {
-        $pathology = $this->pathologyRepository->findOneBy(['pathology_type' => $pathologyTypeId]);
+        $pathologyTypeId = $entry['pathology_type_id'];
+
+        if ($entry['pathology_id'] !== null) {
+            $pathology = $this->pathologyRepository->find($entry['pathology_id']);
+            if ($pathology instanceof Pathology && $pathology->getPathologyType()?->getId() === $pathologyTypeId) {
+                if ($entry['protocol_color'] === null || $pathology->getProtocolColor() === $entry['protocol_color']) {
+                    return $pathology;
+                }
+            }
+        }
+
+        $criteria = ['pathology_type' => $pathologyTypeId];
+        if ($entry['protocol_color'] !== null) {
+            $criteria['protocolColor'] = $entry['protocol_color'];
+        }
+
+        $pathology = $this->pathologyRepository->findOneBy($criteria);
         if ($pathology instanceof Pathology) {
             return $pathology;
         }
@@ -506,9 +548,9 @@ final class OdontogramApiController extends AbstractController
         }
 
         $pathology = new Pathology();
-        $pathology->setDescription($this->buildPathologyDescription($pathologyType));
-        $pathology->setProtocolColor($this->resolveProtocolColor($pathologyType));
-        $pathology->setVisualType('Protocol');
+        $pathology->setDescription($this->buildPathologyDescription($pathologyType, $entry['visual_type']));
+        $pathology->setProtocolColor($entry['protocol_color'] ?? $this->resolveProtocolColor($pathologyType));
+        $pathology->setVisualType($entry['visual_type'] ?? 'Protocol');
         $pathology->setPathologyType($pathologyType);
         $pathology->setTreatment($treatment);
         $this->entityManager->persist($pathology);
@@ -516,11 +558,16 @@ final class OdontogramApiController extends AbstractController
         return $pathology;
     }
 
-    private function buildPathologyDescription(PathologyType $pathologyType): string
+    private function buildPathologyDescription(PathologyType $pathologyType, ?string $visualType = null): string
     {
         $name = trim((string) ($pathologyType->getName() ?? ''));
+        $state = trim((string) ($visualType ?? ''));
 
-        return $name !== '' ? sprintf('%s protocol mark', $name) : 'Protocol mark';
+        if ($name === '') {
+            return $state !== '' ? sprintf('Protocol mark - %s', $state) : 'Protocol mark';
+        }
+
+        return $state !== '' ? sprintf('%s - %s', $name, $state) : sprintf('%s protocol mark', $name);
     }
 
     private function resolveProtocolColor(PathologyType $pathologyType): string
@@ -533,6 +580,35 @@ final class OdontogramApiController extends AbstractController
             'endodòncia', 'endodoncia' => '#9b8cff',
             default => '#9aa7b2',
         };
+    }
+
+    private function normalizeProtocolColor(mixed $protocolColor): ?string
+    {
+        if (!is_string($protocolColor)) {
+            return null;
+        }
+
+        $normalizedColor = strtoupper(trim($protocolColor));
+        if ($normalizedColor === '') {
+            return null;
+        }
+
+        if (!preg_match('/^#[0-9A-F]{6}$/', $normalizedColor)) {
+            throw new \InvalidArgumentException('Each entry protocol_color must be a valid #RRGGBB color.');
+        }
+
+        return $normalizedColor;
+    }
+
+    private function normalizeVisualType(mixed $visualType): ?string
+    {
+        if (!is_string($visualType)) {
+            return null;
+        }
+
+        $normalizedVisualType = trim($visualType);
+
+        return $normalizedVisualType !== '' ? $normalizedVisualType : null;
     }
 
     private function resolveTreatmentName(array $data): string
