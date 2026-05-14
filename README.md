@@ -147,6 +147,24 @@ symfony server:start
 - **List + search:** `GET /api/patients?search=...` returns a JSON **array** (`200`). If `search` is only digits, the backend resolves by **patient `id`** first, then by name; the query avoids driver-specific failures (DQL `CONCAT` uses two arguments per call).
 - **Patient JSON:** canonical field for allergies is **`medicationAllergies`**; responses also include **`medication_allergies`** with the same string. **POST/PUT** accept either key; if both are sent they must match.
 
+### Documentos clínicos (`/api/documents`, subrecurso paciente)
+
+Contrato alineado con el front Angular (pantalla Documents). **`API_BASE_URL`** en `.env` debe coincidir con la base pública de la API que usa el cliente (las IRI de paciente en POST deben ser exactamente `{API_BASE_URL}/api/patients/{id}`).
+
+| Método | Ruta | Notas |
+| :----- | :--- | :---- |
+| GET | `/api/patients/{id}/documents` | Lista documentos del paciente (JSON array o Hydra si `Accept: application/ld+json` o `?hydra=1`). |
+| GET | `/api/documents` | **Obligatorio** filtrar: `patientId`, `patient_id` / `patient.id` (PHP puede normalizar el punto), `patient[id]`, o `patient` (IRI). Sin filtro: `400`. |
+| GET | `/api/documents/{id}` | **Obligatorio** query `patientId`; debe coincidir con el propietario (403 si no). |
+| GET | `/api/documents/{id}/download` | Igual: `patientId` obligatorio; respuesta binaria (`Content-Type` del documento). |
+| POST | `/api/documents` | `multipart/form-data`: `file`, `patient` (IRI absoluta exacta), `type` (MIME; `application/octet-stream` se normaliza por extensión), `description` opcional. |
+| PUT | `/api/documents/{id}?patientId=…` | JSON con `description` (texto largo / notas). Cuerpo `200` con el recurso actualizado. |
+| DELETE | `/api/documents/{patientId}/{documentId}` | Borra fila y fichero en `public/uploads/documents/` si existe. |
+
+Errores JSON incluyen `code`, `message`, `status`; en **413** también `maxUploadBytes` (y en `details`) según `DOCUMENT_MAX_UPLOAD_BYTES` en `.env`.
+
+La comprobación «documento pertenece al paciente» está centralizada en `App\Service\DocumentPatientAccessGuard`.
+
 ---
 
 ## Tests and useful commands

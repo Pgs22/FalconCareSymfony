@@ -19,4 +19,14 @@ final class PatientIriParserTest extends TestCase
     {
         self::assertSame(11, PatientIriParser::parsePatientId('11'));
     }
+
+    public function testPostPatientAbsoluteIriExactBase(): void
+    {
+        $base = 'http://127.0.0.1:8000';
+        self::assertSame(3, PatientIriParser::parsePatientIdFromPostPatientAbsoluteIri($base . '/api/patients/3', $base));
+        self::assertNull(PatientIriParser::parsePatientIdFromPostPatientAbsoluteIri('3', $base));
+        self::assertNull(PatientIriParser::parsePatientIdFromPostPatientAbsoluteIri('/api/patients/3', $base));
+        self::assertNull(PatientIriParser::parsePatientIdFromPostPatientAbsoluteIri($base . '/api/patients/3?x=1', $base));
+        self::assertNull(PatientIriParser::parsePatientIdFromPostPatientAbsoluteIri('http://other.test/api/patients/3', $base));
+    }
 }

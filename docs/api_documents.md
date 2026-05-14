@@ -34,3 +34,18 @@ To ensure performance and maintain structural integrity, database changes are ma
 * **Migration `Version20260301214009` (Performance Index)**:
 1. **`up()`**: Executes `CREATE INDEX idx_document_capture_date ON document (capture_date);`. This action creates a database index on the `capture_date` column to dramatically speed up document searches within specific date ranges.
 2. **`down()`**: Executes `DROP INDEX idx_document_capture_date;`. This allows the change to be reverted if necessary, dropping the index to return the database to its previous state.
+
+## 4. Angular FalconCare contract (summary)
+
+- **List (try in order on the client):** `GET /api/patients/{patientId}/documents`, then `GET /api/documents?patientId=`, `?patient.id=` / `?patient_id=`, `?patient={absolute IRI}`.
+- **Metadata:** `GET /api/documents/{id}?patientId=` (required; owner check).
+- **Upload:** `POST /api/documents` — `patient` must be the **exact** absolute IRI `{API_BASE_URL}/api/patients/{id}` (not a bare numeric id). `type` may be `application/octet-stream`; the API resolves the stored MIME from the file extension when needed.
+- **Download:** `GET /api/documents/{id}/download?patientId=`.
+- **Notes:** `PUT /api/documents/{id}?patientId=` with JSON `{ "description": "..." }`.
+- **Delete:** `DELETE /api/documents/{patientId}/{documentId}`.
+- **Payload limit:** env `DOCUMENT_MAX_UPLOAD_BYTES` (default 10 MiB in `.env`); **413** responses include `maxUploadBytes`.
+- **Hydra-style lists:** collections may include `hydra:member` and a top-level `member` alias for the same array (`DocumentApiSerializer::hydraCollection`).
+
+### C. `DocumentPatientAccessGuard`
+
+Single place for «document belongs to patient X» checks used by metadata, download, update, and delete handlers.

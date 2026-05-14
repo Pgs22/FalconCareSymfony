@@ -39,4 +39,24 @@ final class PatientIriParser
 
         return null;
     }
+
+    /**
+     * POST multipart: el campo `patient` debe ser la IRI absoluta exacta `{API_BASE}/api/patients/{id}` (sin query).
+     */
+    public static function parsePatientIdFromPostPatientAbsoluteIri(string $raw, string $apiBaseUrl): ?int
+    {
+        $trimmed = trim($raw);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $base = rtrim($apiBaseUrl, '/');
+        if ($base === '') {
+            return null;
+        }
+
+        $pattern = '#^' . preg_quote($base, '#') . '/api/patients/(\d+)$#';
+
+        return preg_match($pattern, $trimmed, $m) === 1 ? (int) $m[1] : null;
+    }
 }
