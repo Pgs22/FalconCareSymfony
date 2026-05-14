@@ -169,4 +169,132 @@ final class DocumentApiSecurityTest extends WebTestCase
         self::assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
     }
 
+    public function testListWithPatient_idQueryParameter(): void
+    {
+        $client = static::createClient();
+        $ctx = self::doctorTwoPatientsAndOneDoc($client);
+        $headers = ['HTTP_AUTHORIZATION' => 'Bearer ' . $ctx['token']];
+
+        $client->request('GET', '/api/documents?patient_id=' . $ctx['patientA'], [], [], $headers);
+        self::assertResponseIsSuccessful();
+        $q = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertCount(1, $q);
+    }
+
+    public function testPostRejectsPlainNumericPatientField(): void
+    {
+        $client = static::createClient();
+        $email = 'doc-plain-patient-' . uniqid('', true) . '@falconcare.local';
+        $client->request('POST', '/api/auth/register-doctor', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+            'fullName' => 'Doc P',
+            'email' => $email,
+            'password' => 'Doctor123!',
+        ], \JSON_THROW_ON_ERROR));
+        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $client->request('POST', '/api/auth/login', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+            'email' => $email,
+            'password' => 'Doctor123!',
+        ], \JSON_THROW_ON_ERROR));
+        self::assertResponseIsSuccessful();
+        $auth = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        $headers = ['HTTP_AUTHORIZATION' => 'Bearer ' . $auth['accessToken']];
+
+        $tmp = tempnam(sys_get_temp_dir(), 'doc');
+        self::assertNotFalse($tmp);
+        file_put_contents($tmp, '%PDF-1.4 test');
+        $upload = new UploadedFile($tmp, 'xray.pdf', 'application/pdf', null, true);
+
+        $client->request('POST', '/api/documents', [
+            'patient' => '1',
+            'type' => 'application/pdf',
+        ], ['file' => $upload], $headers);
+
+        self::assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+        $err = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('DOCUMENT_PATIENT_ABSOLUTE_IRI_REQUIRED', $err['code']);
+    }
+
+    public function testPutDescriptionThenDeleteByNestedRoute(): void
+    {
+        $client = static::createClient();
+        $ctx = self::doctorTwoPatientsAndOneDoc($client);
+        $headers = [
+            'HTTP_AUTHORIZATION' => 'Bearer ' . $ctx['token'],
+            'CONTENT_TYPE' => 'application/json',
+        ];
+
+        $client->request(
+            'PUT',
+            '/api/documents/' . $ctx['docId'] . '?patientId=' . $ctx['patientA'],
+            [],
+            [],
+            $headers,
+            json_encode(['description' => "Línea 1\nLínea 2"], \JSON_THROW_ON_ERROR)
+        );
+        self::assertResponseIsSuccessful();
+        $afterPut = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertStringContainsString('Línea 1', (string) $afterPut['description']);
+
+        $client->request(
+            'DELETE',
+            '/api/documents/' . $ctx['patientA'] . '/' . $ctx['docId'],
+            [],
+            [],
+            $headers
+        );
+        self::assertResponseIsSuccessful();
+
+        $client->request('GET', '/api/documents?patientId=' . $ctx['patientA'], [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . $ctx['token']]);
+        self::assertResponseIsSuccessful();
+        $list = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertCount(0, $list);
+    }
+
+    public function testUploadAcceptsApplicationOctetStreamTypeForPdf(): void
+    {
+        $client = static::createClient();
+        $ctx = self::doctorTwoPatientsAndOneDoc($client);
+        $headers = ['HTTP_AUTHORIZATION' => 'Bearer ' . $ctx['token']];
+        $apiBase = rtrim((string) (getenv('API_BASE_URL') ?: ($_ENV['API_BASE_URL'] ?? 'http://127.0.0.1:8000')), '/');
+
+        $tmp = tempnam(sys_get_temp_dir(), 'doc2');
+        self::assertNotFalse($tmp);
+        file_put_contents($tmp, '%PDF-1.4 octet');
+        $upload = new UploadedFile($tmp, 'report.pdf', 'application/octet-stream', null, true);
+
+        $client->request('POST', '/api/documents', [
+            'patient' => $apiBase . '/api/patients/' . $ctx['patientB'],
+            'type' => 'application/octet-stream',
+            'description' => 'octet test',
+        ], ['file' => $upload], $headers);
+
+        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('application/pdf', $payload['type']);
+        self::assertSame($ctx['patientB'], $payload['patientId']);
+    }
+
+    public function testOversizeUploadReturns413WithMaxUploadBytes(): void
+    {
+        $client = static::createClient();
+        $ctx = self::doctorTwoPatientsAndOneDoc($client);
+        $headers = ['HTTP_AUTHORIZATION' => 'Bearer ' . $ctx['token']];
+        $apiBase = rtrim((string) (getenv('API_BASE_URL') ?: ($_ENV['API_BASE_URL'] ?? 'http://127.0.0.1:8000')), '/');
+
+        $tmp = tempnam(sys_get_temp_dir(), 'big');
+        self::assertNotFalse($tmp);
+        file_put_contents($tmp, str_repeat('A', 10_000));
+        $upload = new UploadedFile($tmp, 'big.pdf', 'application/pdf', null, true);
+
+        $client->request('POST', '/api/documents', [
+            'patient' => $apiBase . '/api/patients/' . $ctx['patientA'],
+            'type' => 'application/pdf',
+        ], ['file' => $upload], $headers);
+
+        self::assertResponseStatusCodeSame(Response::HTTP_REQUEST_ENTITY_TOO_LARGE);
+        $err = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('maxUploadBytes', $err);
+        self::assertSame(8192, $err['maxUploadBytes']);
+    }
+
 }
