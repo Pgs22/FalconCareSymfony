@@ -4,9 +4,11 @@ namespace App\Controller\Api;
 
 use App\Entity\Patient;
 use App\Entity\User;
+use App\Repository\AppointmentRepository;
 use App\Repository\DocumentRepository;
 use App\Repository\PatientRepository;
 use App\Repository\UserRepository;
+use App\Service\AppointmentListSerializer;
 use App\Service\PatientRecordsAccessChecker;
 use App\Util\DocumentApiSerializer;
 use App\Util\PatientMedicationAllergiesResolver;
@@ -101,6 +103,41 @@ final class PatientApiController extends AbstractController
         $members = DocumentApiSerializer::collection($documents, $apiBaseUrl);
 
         return DocumentApiSerializer::createDocumentListResponse($request, $members);
+    }
+
+    #[Route('/{id}/appointments', name: 'api_patient_appointments_list', requirements: ['id' => '\\d+'], methods: ['GET'])]
+    #[OA\Get(
+        path: '/api/patients/{id}/appointments',
+        summary: 'List appointments for patient (visit history)',
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'Array of appointments'),
+            new OA\Response(response: 403, description: 'Forbidden'),
+            new OA\Response(response: 404, description: 'Patient not found'),
+        ]
+    )]
+    public function listAppointments(
+        int $id,
+        PatientRepository $repo,
+        AppointmentRepository $appointmentRepository,
+        AppointmentListSerializer $appointmentListSerializer,
+    ): JsonResponse {
+        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
+            return $this->json(
+                ['error' => 'Forbidden', 'message' => 'You do not have permission to list patient appointments.'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
+        $patient = $repo->findById($id);
+        if (!$patient) {
+            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+        }
+
+        $appointments = $appointmentRepository->findByPatient($patient);
+
+        return $this->json($appointmentListSerializer->serializeList($appointments));
     }
 
     #[Route('/{id}', name: 'api_patient_show', requirements: ['id' => '\\d+'], methods: ['GET'])]
