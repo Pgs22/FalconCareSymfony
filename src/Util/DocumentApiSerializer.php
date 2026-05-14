@@ -24,6 +24,9 @@ final class DocumentApiSerializer
         $storedPath = $document->getFilePath() ?? '';
         $displayName = $document->getOriginalName() ?? $storedPath;
         $mime = $document->getType() ?? 'application/octet-stream';
+        $capture = $document->getCaptureDate()?->format(DATE_ATOM);
+        $desc = $document->getDescription();
+        $downloadUrl = $base . '/api/documents/' . $document->getId() . '/download';
 
         return [
             '@id' => $docIri,
@@ -34,20 +37,30 @@ final class DocumentApiSerializer
                 'id' => $patientId,
             ],
             'patientId' => $patientId,
-            'description' => $document->getDescription(),
-            'captureDate' => $document->getCaptureDate()?->format(DATE_ATOM),
-            'createdAt' => $document->getCaptureDate()?->format(DATE_ATOM),
+            'patient_id' => $patientId,
+            'description' => $desc,
+            'notes' => $desc,
+            'clinicalNotes' => $desc,
+            'clinical_notes' => $desc,
+            'captureDate' => $capture,
+            'capture_date' => $capture,
+            'createdAt' => $capture,
+            'created_at' => $capture,
             'originalName' => $displayName,
             'original_name' => $displayName,
             'originalFilename' => $displayName,
+            'original_filename' => $displayName,
             'fileName' => $displayName,
+            'file_name' => $displayName,
             'filename' => $displayName,
             'name' => $displayName,
             'title' => $displayName,
             'path' => $storedPath,
             'filePath' => $storedPath,
             'file_path' => $storedPath,
-            'url' => $base . '/api/documents/' . $document->getId() . '/download',
+            'url' => $downloadUrl,
+            'fileUrl' => $downloadUrl,
+            'file_url' => $downloadUrl,
             'mimeType' => $mime,
             'mime_type' => $mime,
             'type' => $mime,
@@ -76,6 +89,8 @@ final class DocumentApiSerializer
      */
     public static function hydraCollection(array $members, string $collectionIri): array
     {
+        $count = \count($members);
+
         return [
             '@context' => [
                 'hydra' => 'http://www.w3.org/ns/hydra/core#',
@@ -83,7 +98,9 @@ final class DocumentApiSerializer
             '@id' => $collectionIri,
             '@type' => 'hydra:Collection',
             'hydra:member' => $members,
-            'hydra:totalItems' => \count($members),
+            'hydra:totalItems' => $count,
+            'member' => $members,
+            'totalItems' => $count,
         ];
     }
 
