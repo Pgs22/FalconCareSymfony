@@ -2,22 +2,26 @@
 
 namespace App\Controller\Api;
 
+use App\Controller\Api\Concerns\ApiTranslatorTrait;
 use App\Entity\Appointment;
 use App\Entity\Patient;
 use App\Form\AppointmentType;
 use App\Repository\AppointmentRepository;
 use App\Entity\Odontogram;
+use App\Service\AppointmentListSerializer;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
+    use ApiTranslatorTrait;
     private const STATUS_SCHEDULED = 'Programada';
     private const STATUS_MISSING_CONSENT = 'Falta consentiment';
     private const STATUS_IN_PROGRESS = 'En curs';
@@ -41,20 +45,10 @@ final class AppointmentController extends AbstractController
     private const ALLOWED_CLEANING_MINUTES = [5, 10, 15];
     private const NO_KNOWN_MEDICATION_ALLERGIES = 'Cap coneguda';
 
-    private function normalizeAppointmentStatus(?string $status): string
-    {
-        $status = trim((string) $status);
-
-        if ($status === '') {
-            return self::STATUS_SCHEDULED;
-        }
-
-        return match ($status) {
-            'Encurs' => self::STATUS_IN_PROGRESS,
-            'Falta Consentiment' => self::STATUS_MISSING_CONSENT,
-            'Cancel·lada', 'CancelÂ·lada' => 'Cancelada',
-            default => $status,
-        };
+    public function __construct(
+        private readonly AppointmentListSerializer $appointmentListSerializer,
+        private readonly TranslatorInterface $translator,
+    ) {
     }
 
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
@@ -65,55 +59,7 @@ final class AppointmentController extends AbstractController
 
         $appointments = $repo->findByDate($fecha);
 
-        return $this->json($this->serializeAppointments($appointments));
-    }
-
-    private function serializeAppointments(array $appointments): array
-        {
-        $result = [];
-        foreach ($appointments as $appointment) {
-            $reason = $appointment->getConsultationReason() ?? '';
-            $status = $this->normalizeAppointmentStatus($appointment->getStatus());
-            
-            $isUrgency = $appointment->isUrgency() || str_contains(strtolower($reason), 'urgència') || str_contains(strtolower($reason), 'urgencia');
-            $isFirstVisit = $appointment->isFirstVisit() || str_contains(strtolower($reason), 'primera visita');
-
-            if ($status === 'Finalitzada') {
-                $color = '#9e9e9e';
-            } elseif ($isUrgency) {
-                $color = '#e91e63';
-            } elseif ($isFirstVisit) {
-                $color = '#9c27b0';
-            } else {
-                $color = '#00bcd4';
-            }
-
-            $result[] = [
-                'id' => $appointment->getId(),
-                'date' => $appointment->getVisitDate()->format('Y-m-d'),
-                'time' => $appointment->getVisitTime() ? $appointment->getVisitTime()->format('H:i') : '--:--',
-                'duration' => $appointment->getDurationMinutes() ?? 30,
-                'cleaningTime' => $appointment->getCleaningMinutes(),
-                'cleaning_time' => $appointment->getCleaningMinutes(),
-                'cleaningMinutes' => $appointment->getCleaningMinutes(),
-                'totalBlockTime' => $appointment->getTotalDurationWithCleaning(),
-                'patientName' => $appointment->getPatient() 
-                    ? $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName() 
-                    : 'Sense Pacient',
-                'doctorName' => $appointment->getDoctor() 
-                    ? trim($appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames())
-                    : 'Sense Doctor',
-                'doctorId' => $appointment->getDoctor() ? $appointment->getDoctor()->getId() : null,
-                'boxId' => $appointment->getBox() ? $appointment->getBox()->getId() : null,
-                'box' => $appointment->getBox() ? $appointment->getBox()->getBoxName() : 'Sense Box',
-                'reason' => $reason,
-                'status' => $status,
-                'color' => $color,
-                'isUrgency' => $isUrgency,
-                'isFirstVisit' => $isFirstVisit
-            ];
-        }
-        return $result;
+        return $this->json($this->appointmentListSerializer->serializeList($appointments));
     }
 
     #[Route('/weekly', name: 'app_appointment_weekly', methods: ['GET'])]
@@ -135,7 +81,7 @@ final class AppointmentController extends AbstractController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        return $this->json($this->serializeAppointments($appointments));
+        return $this->json($this->appointmentListSerializer->serializeList($appointments));
     }
 
     #[Route('/statuses', name: 'app_appointment_statuses', methods: ['GET'])]
@@ -232,7 +178,7 @@ final class AppointmentController extends AbstractController
         $doctor = $appointment->getDoctor();
         $box = $appointment->getBox();
         $reason = $appointment->getConsultationReason() ?? '';
-        $status = $this->normalizeAppointmentStatus($appointment->getStatus());
+        $status = $this->appointmentListSerializer->normalizeStatus($appointment->getStatus());
 
         $data = [
             'id' => $appointment->getId(),
@@ -395,7 +341,7 @@ final class AppointmentController extends AbstractController
                         'code' => 'DOCTOR_OCCUPIED',
                         'error' => [
                             'messageKey' => 'appointment.doctor.occupied',
-                            'message' => 'El doctor ya tiene una cita en ese horario.',
+                            'message' => $this->apiTrans('APPOINTMENT_DOCTOR_SLOT_CONFLICT'),
                         ],
                     ], Response::HTTP_CONFLICT);
                 }
@@ -408,7 +354,7 @@ final class AppointmentController extends AbstractController
                     'code' => 'APPOINTMENT_CREATED',
                     'messageKey' => 'appointment.created',
                     'id' => $appointment->getId(),
-                    'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+                    'status' => $this->appointmentListSerializer->normalizeStatus($appointment->getStatus()),
                     'appointment' => $this->serializeAppointment($appointment),
                 ];
 
@@ -480,7 +426,7 @@ final class AppointmentController extends AbstractController
             'code' => 'APPOINTMENT_OPENED',
             'messageKey' => 'appointment.opened',
             'id' => $appointment->getId(),
-            'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+            'status' => $this->appointmentListSerializer->normalizeStatus($appointment->getStatus()),
             'odontogramId' => $odontogramId,
             'appointment' => $this->serializeAppointment($appointment, $odontogramId),
         ]);
@@ -503,7 +449,7 @@ final class AppointmentController extends AbstractController
             'code' => 'APPOINTMENT_CLOSED',
             'messageKey' => 'appointment.closed',
             'id' => $appointment->getId(),
-            'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+            'status' => $this->appointmentListSerializer->normalizeStatus($appointment->getStatus()),
             'appointment' => $this->serializeAppointment($appointment),
         ]);
     }
@@ -574,7 +520,7 @@ final class AppointmentController extends AbstractController
             'code' => 'APPOINTMENT_STATUS_UPDATED',
             'messageKey' => 'appointment.status.updated',
             'id' => $appointment->getId(),
-            'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+            'status' => $this->appointmentListSerializer->normalizeStatus($appointment->getStatus()),
             'appointment' => $this->serializeAppointment($appointment),
         ]);
     }
@@ -641,7 +587,7 @@ final class AppointmentController extends AbstractController
                         'code' => 'DOCTOR_OCCUPIED',
                         'error' => [
                             'messageKey' => 'appointment.doctor.occupied',
-                            'message' => 'El doctor ya tiene una cita en ese horario.',
+                            'message' => $this->apiTrans('APPOINTMENT_DOCTOR_SLOT_CONFLICT'),
                         ],
                     ], Response::HTTP_CONFLICT);
                 }
@@ -653,7 +599,7 @@ final class AppointmentController extends AbstractController
                     'code' => 'APPOINTMENT_UPDATED',
                     'messageKey' => 'appointment.updated',
                     'id' => $appointment->getId(),
-                    'status' => $this->normalizeAppointmentStatus($appointment->getStatus()),
+                    'status' => $this->appointmentListSerializer->normalizeStatus($appointment->getStatus()),
                     'appointment' => $this->serializeAppointment($appointment),
                 ]);
             } catch (\Exception $e) {

@@ -2,6 +2,7 @@
 
 namespace App\Controller\Api;
 
+use App\Controller\Api\Concerns\ApiTranslatorTrait;
 use App\Entity\Appointment;
 use App\Entity\Odontogram;
 use App\Entity\OdontogramDetail;
@@ -21,10 +22,13 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 #[Route('/api/odontograms')]
 final class OdontogramApiController extends AbstractController
 {
+    use ApiTranslatorTrait;
+
     private const STATUS_OPEN = 'Abierto';
 
     public function __construct(
@@ -33,6 +37,7 @@ final class OdontogramApiController extends AbstractController
         private readonly OdontogramDetailRepository $odontogramDetailRepository,
         private readonly PathologyRepository $pathologyRepository,
         private readonly EntityManagerInterface $entityManager,
+        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -45,27 +50,27 @@ final class OdontogramApiController extends AbstractController
 
         if (!$this->isPositiveInt($patientId) || !$this->isPositiveInt($visitId)) {
             return $this->json([
-                'error' => 'patient_id and visit_id are required',
+                'error' => $this->apiTrans('ODO_PATIENT_VISIT_IDS_REQUIRED'),
             ], Response::HTTP_BAD_REQUEST);
         }
 
         $patient = $this->entityManager->find(Patient::class, (int) $patientId);
         if (!$patient instanceof Patient) {
             return $this->json([
-                'error' => 'Patient not found',
+                'error' => $this->apiTrans('PATIENT_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
         $visit = $this->appointmentRepository->find((int) $visitId);
         if (!$visit instanceof Appointment) {
             return $this->json([
-                'error' => 'Appointment not found',
+                'error' => $this->apiTrans('ODO_APPOINTMENT_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
         if ($visit->getPatient()?->getId() !== $patient->getId()) {
             return $this->json([
-                'error' => 'The appointment does not belong to the provided patient',
+                'error' => $this->apiTrans('ODO_APPOINTMENT_PATIENT_MISMATCH'),
             ], Response::HTTP_CONFLICT);
         }
 
@@ -93,13 +98,13 @@ final class OdontogramApiController extends AbstractController
             $this->rollBack();
 
             return $this->json([
-                'error' => 'Could not create or recover the odontogram',
+                'error' => $this->apiTrans('ODO_CREATE_OR_RECOVER_FAILED'),
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         return $this->json([
-            'message' => $created ? 'Odontogram created successfully' : 'Open odontogram reused successfully',
+            'message' => $created ? $this->apiTrans('ODO_CREATED_SUCCESS') : $this->apiTrans('ODO_REUSED_SUCCESS'),
             'odontogram' => $this->serializeOdontogram($odontogram),
         ], $created ? Response::HTTP_CREATED : Response::HTTP_OK);
     }
@@ -110,7 +115,7 @@ final class OdontogramApiController extends AbstractController
         $odontogram = $this->odontogramRepository->find($odontogramId);
         if (!$odontogram instanceof Odontogram) {
             return $this->json([
-                'error' => 'Odontogram not found',
+                'error' => $this->apiTrans('ODO_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -121,20 +126,20 @@ final class OdontogramApiController extends AbstractController
 
         if (!$this->isPositiveInt($pathologyId) || !$this->isPositiveInt($toothNumber)) {
             return $this->json([
-                'error' => 'pathology_id and tooth_number are required',
+                'error' => $this->apiTrans('ODO_PATHOLOGY_TOOTH_REQUIRED'),
             ], Response::HTTP_BAD_REQUEST);
         }
 
         if (!is_array($faces)) {
             return $this->json([
-                'error' => 'faces must be an array',
+                'error' => $this->apiTrans('ODO_FACES_MUST_BE_ARRAY'),
             ], Response::HTTP_BAD_REQUEST);
         }
 
         $pathology = $this->pathologyRepository->find((int) $pathologyId);
         if (!$pathology instanceof Pathology) {
             return $this->json([
-                'error' => 'Pathology not found',
+                'error' => $this->apiTrans('ODO_PATHOLOGY_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -163,13 +168,13 @@ final class OdontogramApiController extends AbstractController
             $this->rollBack();
 
             return $this->json([
-                'error' => 'Could not create the odontogram detail',
+                'error' => $this->apiTrans('ODO_DETAIL_CREATE_FAILED'),
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         return $this->json([
-            'message' => 'Pathology added to tooth successfully',
+            'message' => $this->apiTrans('ODO_PATHOLOGY_ADDED_OK'),
             'detail' => $this->serializeDetail($detail),
         ], Response::HTTP_CREATED);
     }
@@ -180,7 +185,7 @@ final class OdontogramApiController extends AbstractController
         $odontogram = $this->odontogramRepository->find($odontogramId);
         if (!$odontogram instanceof Odontogram) {
             return $this->json([
-                'error' => 'Odontogram not found',
+                'error' => $this->apiTrans('ODO_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -189,14 +194,14 @@ final class OdontogramApiController extends AbstractController
 
         if (!$this->isPositiveInt($visitId)) {
             return $this->json([
-                'error' => 'visit_id is required',
+                'error' => $this->apiTrans('ODO_VISIT_ID_REQUIRED'),
             ], Response::HTTP_BAD_REQUEST);
         }
 
         $visit = $this->appointmentRepository->find((int) $visitId);
         if (!$visit instanceof Appointment) {
             return $this->json([
-                'error' => 'Appointment not found',
+                'error' => $this->apiTrans('ODO_APPOINTMENT_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -205,7 +210,7 @@ final class OdontogramApiController extends AbstractController
 
         if ($odontogramPatientId !== null && $visitPatientId !== $odontogramPatientId) {
             return $this->json([
-                'error' => 'The appointment does not belong to the odontogram patient',
+                'error' => $this->apiTrans('ODO_APPOINTMENT_PATIENT_MISMATCH'),
             ], Response::HTTP_CONFLICT);
         }
 
@@ -242,13 +247,13 @@ final class OdontogramApiController extends AbstractController
             $this->rollBack();
 
             return $this->json([
-                'error' => 'Could not create the treatment and sync the visit',
+                'error' => $this->apiTrans('ODO_TREATMENT_SYNC_FAILED'),
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         return $this->json([
-            'message' => 'Treatment created and visit synchronized successfully',
+            'message' => $this->apiTrans('ODO_TREATMENT_SYNC_OK'),
             'treatment' => $this->serializeTreatment($treatment),
             'odontogram' => $this->serializeOdontogram($odontogram),
         ], Response::HTTP_CREATED);
@@ -260,7 +265,7 @@ final class OdontogramApiController extends AbstractController
         $odontogram = $this->odontogramRepository->find($odontogramId);
         if (!$odontogram instanceof Odontogram) {
             return $this->json([
-                'error' => 'Odontogram not found',
+                'error' => $this->apiTrans('ODO_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -269,7 +274,7 @@ final class OdontogramApiController extends AbstractController
 
         if (!is_array($entries)) {
             return $this->json([
-                'error' => 'entries must be an array',
+                'error' => $this->apiTrans('ODO_ENTRIES_MUST_BE_ARRAY'),
             ], Response::HTTP_BAD_REQUEST);
         }
 
@@ -277,7 +282,7 @@ final class OdontogramApiController extends AbstractController
             $normalizedEntries = $this->normalizeSyncEntries($entries);
         } catch (\InvalidArgumentException $exception) {
             return $this->json([
-                'error' => $exception->getMessage(),
+                'error' => $this->apiTrans('ODO_SYNC_ENTRIES_INVALID', ['%reason%' => $exception->getMessage()]),
             ], Response::HTTP_BAD_REQUEST);
         }
 
@@ -318,13 +323,13 @@ final class OdontogramApiController extends AbstractController
             $this->rollBack();
 
             return $this->json([
-                'error' => 'Could not synchronize the odontogram details',
+                'error' => $this->apiTrans('ODO_DETAILS_SYNC_FAILED'),
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         return $this->json([
-            'message' => 'Odontogram details synchronized successfully',
+            'message' => $this->apiTrans('ODO_DETAILS_SYNC_OK'),
             'odontogram' => $this->serializeOdontogram($odontogram),
         ], Response::HTTP_OK);
     }
@@ -336,7 +341,7 @@ final class OdontogramApiController extends AbstractController
 
         if (!$odontogram instanceof Odontogram) {
             return $this->json([
-                'message' => 'Odontogram not found',
+                'message' => $this->apiTrans('ODO_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -349,7 +354,7 @@ final class OdontogramApiController extends AbstractController
         $odontogram = $this->odontogramRepository->find($odontogramId);
         if (!$odontogram instanceof Odontogram) {
             return $this->json([
-                'message' => 'Odontogram not found',
+                'message' => $this->apiTrans('ODO_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -368,7 +373,7 @@ final class OdontogramApiController extends AbstractController
 
         if (!$detail instanceof OdontogramDetail) {
             return $this->json([
-                'error' => 'Odontogram detail not found',
+                'error' => $this->apiTrans('ODO_DETAIL_NOT_FOUND'),
             ], Response::HTTP_NOT_FOUND);
         }
 
@@ -386,7 +391,7 @@ final class OdontogramApiController extends AbstractController
             $this->rollBack();
 
             return $this->json([
-                'error' => 'Could not delete the odontogram detail',
+                'error' => $this->apiTrans('ODO_DETAIL_DELETE_FAILED'),
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }

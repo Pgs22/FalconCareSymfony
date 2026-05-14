@@ -2,6 +2,7 @@
 
 namespace App\Controller\Api;
 
+use App\Controller\Api\Concerns\ApiTranslatorTrait;
 use App\Entity\Patient;
 use App\Entity\User;
 use App\Repository\AppointmentRepository;
@@ -21,6 +22,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * JSON paciente:
@@ -32,8 +34,11 @@ use Symfony\Component\Routing\Attribute\Route;
 #[OA\Tag(name: 'Patients')]
 final class PatientApiController extends AbstractController
 {
+    use ApiTranslatorTrait;
+
     public function __construct(
         private readonly PatientRecordsAccessChecker $patientRecordsAccess,
+        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -89,14 +94,17 @@ final class PatientApiController extends AbstractController
     ): JsonResponse {
         if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
             return $this->json(
-                ['error' => 'Forbidden', 'message' => 'You do not have permission to list patient documents.'],
+                [
+                    'error' => $this->apiHttpLine(Response::HTTP_FORBIDDEN),
+                    'message' => $this->apiTrans('PATIENT_DOCUMENTS_LIST_FORBIDDEN'),
+                ],
                 Response::HTTP_FORBIDDEN
             );
         }
 
         $patient = $repo->findById($id);
         if (!$patient) {
-            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->json(['message' => $this->apiTrans('PATIENT_NOT_FOUND')], Response::HTTP_NOT_FOUND);
         }
 
         $documents = $documentRepository->findByPatientOrdered($patient);
@@ -125,14 +133,17 @@ final class PatientApiController extends AbstractController
     ): JsonResponse {
         if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
             return $this->json(
-                ['error' => 'Forbidden', 'message' => 'You do not have permission to list patient appointments.'],
+                [
+                    'error' => $this->apiHttpLine(Response::HTTP_FORBIDDEN),
+                    'message' => $this->apiTrans('PATIENT_APPOINTMENTS_LIST_FORBIDDEN'),
+                ],
                 Response::HTTP_FORBIDDEN
             );
         }
 
         $patient = $repo->findById($id);
         if (!$patient) {
-            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->json(['message' => $this->apiTrans('PATIENT_NOT_FOUND')], Response::HTTP_NOT_FOUND);
         }
 
         $appointments = $appointmentRepository->findByPatient($patient);
@@ -155,7 +166,7 @@ final class PatientApiController extends AbstractController
     {
         $patient = $repo->findById($id);
         if (!$patient) {
-            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->json(['message' => $this->apiTrans('PATIENT_NOT_FOUND')], Response::HTTP_NOT_FOUND);
         }
 
         return $this->json(self::serializePatient($patient), Response::HTTP_OK);
@@ -176,7 +187,7 @@ final class PatientApiController extends AbstractController
     {
         $patients = $repo->findByIdentityDocument($identityDocument);
         if (empty($patients)) {
-            return $this->json(['message' => 'No patients found'], Response::HTTP_NOT_FOUND);
+            return $this->json(['message' => $this->apiTrans('PATIENTS_NONE_BY_IDENTITY')], Response::HTTP_NOT_FOUND);
         }
 
         $data = array_map(static fn (Patient $patient) => self::serializePatient($patient), $patients);
@@ -211,25 +222,25 @@ final class PatientApiController extends AbstractController
         $required = ['identityDocument', 'firstName', 'lastName', 'phone', 'email', 'address', 'consultationReason', 'familyHistory', 'healthStatus', 'lifestyleHabits'];
         foreach ($required as $field) {
             if (!isset($data[$field]) || trim((string) $data[$field]) === '') {
-                return $this->json(['message' => 'Missing required fields'], Response::HTTP_BAD_REQUEST);
+                return $this->json(['message' => $this->apiTrans('PATIENT_CREATE_MISSING_FIELDS')], Response::HTTP_BAD_REQUEST);
             }
         }
 
         $allergiesResolved = PatientMedicationAllergiesResolver::resolveForCreate($data);
         if (!$allergiesResolved['ok']) {
-            return $this->json(['message' => $allergiesResolved['message']], Response::HTTP_BAD_REQUEST);
+            return $this->json(['message' => $this->apiTrans($allergiesResolved['messageKey'])], Response::HTTP_BAD_REQUEST);
         }
 
         $allergiesBitmask = $this->resolveAllergiesBitmask($data);
 
         $identityDocument = (string) $data['identityDocument'];
         if ($repo->findOneByIdentityDocument($identityDocument)) {
-            return $this->json(['message' => 'Patient already exists'], Response::HTTP_BAD_REQUEST);
+            return $this->json(['message' => $this->apiTrans('PATIENT_CREATE_ALREADY_EXISTS')], Response::HTTP_BAD_REQUEST);
         }
 
         $email = (string) $data['email'];
         if ($userRepository->findOneByEmailCaseInsensitive($email)) {
-            return $this->json(['message' => 'Email already registered'], Response::HTTP_BAD_REQUEST);
+            return $this->json(['message' => $this->apiTrans('EMAIL_ALREADY_REGISTERED')], Response::HTTP_BAD_REQUEST);
         }
 
         $patient = new Patient();
@@ -251,7 +262,7 @@ final class PatientApiController extends AbstractController
             try {
                 $patient->setRegistrationDate(new \DateTimeImmutable((string) $data['registrationDate']));
             } catch (\Throwable) {
-                return $this->json(['message' => 'Invalid registrationDate format'], Response::HTTP_BAD_REQUEST);
+                return $this->json(['message' => $this->apiTrans('PATIENT_INVALID_REGISTRATION_DATE')], Response::HTTP_BAD_REQUEST);
             }
         } else {
             $patient->setRegistrationDate(new \DateTimeImmutable());
@@ -261,7 +272,9 @@ final class PatientApiController extends AbstractController
         if ($profilePick['present'] ?? false) {
             $normalized = PatientProfileImageResolver::validateAndNormalize($profilePick['value']);
             if (!$normalized['ok']) {
-                return $this->json(['message' => $normalized['message']], Response::HTTP_BAD_REQUEST);
+                return $this->json([
+                    'message' => $this->apiTrans($normalized['messageKey'], $normalized['messageParams'] ?? []),
+                ], Response::HTTP_BAD_REQUEST);
             }
             $patient->setProfileImage($normalized['value']);
         }
@@ -303,14 +316,17 @@ final class PatientApiController extends AbstractController
     {
         if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
             return $this->json(
-                ['error' => 'Forbidden', 'message' => 'You do not have permission to update patients.'],
+                [
+                    'error' => $this->apiHttpLine(Response::HTTP_FORBIDDEN),
+                    'message' => $this->apiTrans('PATIENT_UPDATE_FORBIDDEN'),
+                ],
                 Response::HTTP_FORBIDDEN
             );
         }
 
         $patient = $repo->findById($id);
         if (!$patient) {
-            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->json(['message' => $this->apiTrans('PATIENT_NOT_FOUND')], Response::HTTP_NOT_FOUND);
         }
 
         $data = $request->getContentTypeFormat() === 'json' ? $request->toArray() : $request->request->all();
@@ -351,8 +367,8 @@ final class PatientApiController extends AbstractController
 
         $allergiesUpdate = PatientMedicationAllergiesResolver::resolveForPartialUpdate($data);
         if (($allergiesUpdate['apply'] ?? false) === true) {
-            if (isset($allergiesUpdate['error'])) {
-                return $this->json(['message' => $allergiesUpdate['error']], Response::HTTP_BAD_REQUEST);
+            if (isset($allergiesUpdate['errorKey'])) {
+                return $this->json(['message' => $this->apiTrans($allergiesUpdate['errorKey'])], Response::HTTP_BAD_REQUEST);
             }
             $patient->setMedicationAllergies($allergiesUpdate['value']);
         }
@@ -368,7 +384,9 @@ final class PatientApiController extends AbstractController
         if ($profilePick['present'] ?? false) {
             $normalized = PatientProfileImageResolver::validateAndNormalize($profilePick['value']);
             if (!$normalized['ok']) {
-                return $this->json(['message' => $normalized['message']], Response::HTTP_BAD_REQUEST);
+                return $this->json([
+                    'message' => $this->apiTrans($normalized['messageKey'], $normalized['messageParams'] ?? []),
+                ], Response::HTTP_BAD_REQUEST);
             }
             $patient->setProfileImage($normalized['value']);
         }
@@ -377,7 +395,7 @@ final class PatientApiController extends AbstractController
             try {
                 $patient->setRegistrationDate(new \DateTimeImmutable((string) $data['registrationDate']));
             } catch (\Throwable) {
-                return $this->json(['message' => 'Invalid registrationDate format'], Response::HTTP_BAD_REQUEST);
+                return $this->json(['message' => $this->apiTrans('PATIENT_INVALID_REGISTRATION_DATE')], Response::HTTP_BAD_REQUEST);
             }
         }
 
@@ -401,7 +419,7 @@ final class PatientApiController extends AbstractController
     {
         $patient = $repo->findById($id);
         if (!$patient) {
-            return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            return $this->json(['message' => $this->apiTrans('PATIENT_NOT_FOUND')], Response::HTTP_NOT_FOUND);
         }
 
         $repo->delete($patient);

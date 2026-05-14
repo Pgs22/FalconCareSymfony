@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\Appointment;
+use App\Entity\Patient;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -42,6 +43,21 @@ class AppointmentRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+    /**
+     * Citas de un paciente (historial clínico / panel Angular), más recientes primero.
+     *
+     * @return list<Appointment>
+     */
+    public function findByPatient(Patient $patient): array
+    {
+        return $this->createQueryBuilder('a')
+            ->andWhere('a.patient = :patient')
+            ->setParameter('patient', $patient)
+            ->orderBy('a.visitDate', 'DESC')
+            ->addOrderBy('a.visitTime', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
 
     public function findOverlappingAppointments($date, $startTime, int $duration, $boxId, $excludeId = null, ?int $cleaningMinutes = null): array 
     {

@@ -29,7 +29,7 @@ final class PatientProfileImageResolver
     }
 
     /**
-     * @return array{ok: true, value: ?string}|array{ok: false, message: string}
+     * @return array{ok: true, value: ?string}|array{ok: false, messageKey: string, messageParams?: array<string, string|int>}
      */
     public static function validateAndNormalize(mixed $value): array
     {
@@ -37,14 +37,18 @@ final class PatientProfileImageResolver
             return ['ok' => true, 'value' => null];
         }
         if (!\is_string($value)) {
-            return ['ok' => false, 'message' => 'profile_image must be a string or null.'];
+            return ['ok' => false, 'messageKey' => 'PATIENT_PROFILE_IMAGE_NOT_STRING'];
         }
         $trimmed = trim($value);
         if (\strlen($trimmed) > self::MAX_LENGTH) {
-            return ['ok' => false, 'message' => 'profile_image payload too large (max 2,000,000 characters).'];
+            return [
+                'ok' => false,
+                'messageKey' => 'PATIENT_PROFILE_IMAGE_TOO_LARGE',
+                'messageParams' => ['%max_chars%' => (string) self::MAX_LENGTH],
+            ];
         }
         if ($trimmed !== '' && !preg_match('#^data:image/[a-zA-Z0-9.+-]+;base64,#', $trimmed)) {
-            return ['ok' => false, 'message' => 'profile_image must be a data URL (data:image/*;base64,...).'];
+            return ['ok' => false, 'messageKey' => 'PATIENT_PROFILE_IMAGE_INVALID_DATA_URL'];
         }
 
         return ['ok' => true, 'value' => $trimmed === '' ? null : $trimmed];

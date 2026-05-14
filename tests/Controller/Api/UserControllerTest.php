@@ -44,7 +44,10 @@ final class UserControllerTest extends WebTestCase
      */
     private static function getAuthHeadersFor(\Symfony\Bundle\FrameworkBundle\KernelBrowser $client, string $email, string $password): array
     {
-        $client->request('POST', '/api/auth/login', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+        $client->request('POST', '/api/auth/login', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT_LANGUAGE' => 'es',
+        ], json_encode([
             'email' => $email,
             'password' => $password,
         ], \JSON_THROW_ON_ERROR));
@@ -56,6 +59,7 @@ final class UserControllerTest extends WebTestCase
         return [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_AUTHORIZATION' => 'Bearer ' . $payload['accessToken'],
+            'HTTP_ACCEPT_LANGUAGE' => 'es',
         ];
     }
 
@@ -127,7 +131,7 @@ final class UserControllerTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(403);
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
-        self::assertSame('Forbidden', $payload['error']);
+        self::assertSame('Prohibido', $payload['error']);
     }
 
     public function testUpdateOwnUserProfileImageTooLargeReturns400(): void
@@ -146,7 +150,7 @@ final class UserControllerTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(400);
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
-        self::assertSame('Validation failed', $payload['error']);
+        self::assertSame('Error de validación.', $payload['error']);
     }
 
     public function testUpdateOwnUserProfileImageNullClearsColumn(): void
@@ -215,6 +219,6 @@ final class UserControllerTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(400);
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
-        self::assertSame('Validation failed', $payload['error']);
+        self::assertSame('Error de validación.', $payload['error']);
     }
 }
