@@ -1,0 +1,95 @@
+http:
+    '400': Solicitud incorrecta
+    '401': No autorizado
+    '403': Prohibido
+    '404': No encontrado
+    '409': Conflicto
+    '413': Carga demasiado grande
+    '422': Contenido no procesable
+    '500': Error interno del servidor
+
+error:
+    DOCUMENT_PATIENT_FILTER_REQUIRED: 'Indique filtro de paciente (patientId, patient.id, patient_id, patient[id] o patient como IRI). Es obligatorio acotar por paciente; el acceso sin filtro no está permitido.'
+    PATIENT_NOT_FOUND: Paciente no encontrado.
+    DATE_REQUIRED: El parámetro date es obligatorio.
+    INVALID_DATE: 'Formato de fecha no válido. Use Y-m-d.'
+    DOCUMENT_PATIENT_ID_REQUIRED: El parámetro de consulta patientId es obligatorio y debe coincidir con el paciente del documento.
+    DOCUMENT_FILE_NOT_FOUND: Archivo no encontrado en el servidor.
+    DOCUMENT_FILE_REQUIRED: No se ha enviado ningún archivo.
+    DOCUMENT_FILE_TOO_LARGE: El archivo supera el límite de tamaño permitido.
+    DOCUMENT_FILE_TOO_LARGE_BYTES: 'El archivo subido supera el máximo configurado de %max_bytes% bytes.'
+    DOCUMENT_FILE_UPLOAD_ERROR: Se ha detectado un error en la subida.
+    DOCUMENT_PATIENT_REQUIRED: 'El campo patient es obligatorio y debe ser la IRI absoluta del paciente.'
+    DOCUMENT_PATIENT_ABSOLUTE_IRI_REQUIRED: 'El campo patient debe ser exactamente "%base_url%/api/patients/{id}" (IRI absoluta que coincida con API_BASE_URL).'
+    DOCUMENT_FILE_EMPTY: El archivo subido está vacío.
+    DOCUMENT_FILE_EXTENSION_NOT_ALLOWED: La extensión del archivo no está permitida.
+    DOCUMENT_FILE_MIME_NOT_ALLOWED: 'El tipo MIME del archivo (%mime_type%) no está permitido.'
+    DOCUMENT_FILE_MIME_EXTENSION_MISMATCH: 'El tipo MIME detectado (%mime_type%) no coincide con la extensión del archivo (se esperaba %expected_mime%).'
+    DOCUMENT_TYPE_NOT_ALLOWED: 'El tipo declarado (%type%) no está permitido.'
+    DOCUMENT_TYPE_FILE_MISMATCH: 'El tipo declarado (%type%) no coincide con el archivo subido (se esperaba %expected_type%).'
+    DOCUMENT_FILE_STORE_FAILED: No se ha podido guardar el archivo en el servidor.
+    INVALID_JSON: Cuerpo JSON no válido.
+    DOCUMENT_DESCRIPTION_REQUIRED: El campo description es obligatorio para actualizar las notas clínicas.
+    DOCUMENT_DESCRIPTION_INVALID: El campo description debe ser una cadena o null.
+    DOCUMENT_ACCESS_FORBIDDEN: No tiene permiso para acceder a los documentos del paciente.
+    DOCUMENT_NOT_FOUND: Documento no encontrado.
+    DOCUMENT_PATIENT_MISMATCH: El documento no pertenece al paciente indicado.
+
+    AUTH_VALIDATION_FAILED: 'Error de validación.'
+    AUTH_FIELD_BLANK: 'Este valor no debe estar vacío.'
+    AUTH_INVALID_CREDENTIALS: 'Credenciales no válidas.'
+    AUTH_UNAUTHORIZED: No autorizado.
+    AUTH_REGISTER_FIELDS_REQUIRED: 'Son obligatorios fullName, email y password.'
+    AUTH_PASSWORD_MIN_LENGTH: 'La contraseña debe tener al menos 8 caracteres.'
+    EMAIL_ALREADY_REGISTERED: 'El correo electrónico ya está registrado.'
+    AUTH_FULL_NAME_REQUIRES_SURNAME: 'El nombre completo debe incluir nombre y apellidos.'
+
+    USER_ACCESS_PROFILE_FORBIDDEN: 'Solo puede acceder a su propio perfil de usuario.'
+    USER_UPDATE_PROFILE_FORBIDDEN: 'Solo puede actualizar su propio perfil de usuario.'
+    USER_DELETE_ADMIN_ONLY: 'Solo los administradores pueden eliminar usuarios.'
+
+    PATIENT_DOCUMENTS_LIST_FORBIDDEN: 'No tiene permiso para listar los documentos del paciente.'
+    PATIENT_APPOINTMENTS_LIST_FORBIDDEN: 'No tiene permiso para listar las citas del paciente.'
+    PATIENT_UPDATE_FORBIDDEN: 'No tiene permiso para actualizar pacientes.'
+    PATIENTS_NONE_BY_IDENTITY: 'No se han encontrado pacientes.'
+    PATIENT_CREATE_MISSING_FIELDS: 'Faltan campos obligatorios.'
+    PATIENT_CREATE_ALREADY_EXISTS: 'El paciente ya existe.'
+    PATIENT_INVALID_REGISTRATION_DATE: 'Formato de registrationDate no válido.'
+
+    PATIENT_ALLERGIES_REQUIRED: 'La información de alergias a medicamentos es obligatoria (medicationAllergies o medication_allergies).'
+    PATIENT_ALLERGIES_KEYS_MISMATCH: 'medicationAllergies y medication_allergies deben coincidir si se envían ambos.'
+    PATIENT_PROFILE_IMAGE_NOT_STRING: 'profile_image debe ser una cadena o null.'
+    PATIENT_PROFILE_IMAGE_TOO_LARGE: 'El contenido de profile_image es demasiado grande (máximo %max_chars% caracteres).'
+    PATIENT_PROFILE_IMAGE_INVALID_DATA_URL: 'profile_image debe ser una data URL (data:image/*;base64,...).'
+    ODO_SYNC_ENTRIES_INVALID: 'Entradas de sincronización no válidas: %reason%'
+
+    APPOINTMENT_DOCTOR_SLOT_CONFLICT: 'El doctor ya tiene una cita en ese horario.'
+
+    TREATMENT_INVALID_JSON: 'Cuerpo de la petición no válido.'
+    TREATMENT_CREATED_LINKED: 'Tratamiento creado y vinculado a la cita correctamente.'
+    TREATMENT_NOT_FOUND: 'Tratamiento no encontrado.'
+    TREATMENT_UPDATED_OK: 'Tratamiento actualizado correctamente.'
+    TREATMENT_DELETED_OK: 'Tratamiento eliminado correctamente.'
+    TREATMENT_ALREADY_FINISHED_OR_MISSING: 'Tratamiento no encontrado o ya finalizado.'
+    TREATMENT_FINISHED_OK: 'Tratamiento marcado como finalizado.'
+
+    ODO_PATHOLOGY_ADDED_OK: 'Patología añadida al diente correctamente.'
+    ODO_TREATMENT_SYNC_OK: 'Tratamiento creado y visita sincronizada correctamente.'
+    ODO_DETAILS_SYNC_OK: 'Detalles del odontograma sincronizados correctamente.'
+    ODO_NOT_FOUND: 'Odontograma no encontrado.'
+    ODO_DETAIL_CREATE_FAILED: 'No se ha podido crear el detalle del odontograma.'
+    ODO_TREATMENT_SYNC_FAILED: 'No se ha podido crear el tratamiento ni sincronizar la visita.'
+    ODO_DETAILS_SYNC_FAILED: 'No se han podido sincronizar los detalles del odontograma.'
+    ODO_PATIENT_VISIT_IDS_REQUIRED: 'patient_id y visit_id son obligatorios.'
+    ODO_VISIT_ID_REQUIRED: 'visit_id es obligatorio.'
+    ODO_APPOINTMENT_NOT_FOUND: 'Cita no encontrada.'
+    ODO_APPOINTMENT_PATIENT_MISMATCH: 'La cita no pertenece al paciente del odontograma.'
+    ODO_ENTRIES_MUST_BE_ARRAY: 'entries debe ser un array.'
+    ODO_CREATE_OR_RECOVER_FAILED: 'No se ha podido crear ni recuperar el odontograma.'
+    ODO_PATHOLOGY_TOOTH_REQUIRED: 'pathology_id y tooth_number son obligatorios.'
+    ODO_FACES_MUST_BE_ARRAY: 'faces debe ser un array.'
+    ODO_PATHOLOGY_NOT_FOUND: 'Patología no encontrada.'
+    ODO_DETAIL_NOT_FOUND: 'Detalle del odontograma no encontrado.'
+    ODO_DETAIL_DELETE_FAILED: 'No se ha podido eliminar el detalle del odontograma.'
+    ODO_CREATED_SUCCESS: 'Odontograma creado correctamente.'
+    ODO_REUSED_SUCCESS: 'Se ha reutilizado el odontograma abierto correctamente.'

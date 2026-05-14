@@ -1,0 +1,95 @@
+http:
+    '400': Sol·licitud incorrecta
+    '401': No autoritzat
+    '403': Accés denegat
+    '404': No trobat
+    '409': Conflicte
+    '413': Càrrega massa gran
+    '422': Contingut no processable
+    '500': Error intern del servidor
+
+error:
+    DOCUMENT_PATIENT_FILTER_REQUIRED: 'Indiqueu filtre de pacient (patientId, patient.id, patient_id, patient[id] o patient com a IRI). Cal acotar per pacient; l''accés sense filtre no està permès.'
+    PATIENT_NOT_FOUND: Pacient no trobat.
+    DATE_REQUIRED: El paràmetre date és obligatori.
+    INVALID_DATE: 'Format de data no vàlid. Useu Y-m-d.'
+    DOCUMENT_PATIENT_ID_REQUIRED: El paràmetre de consulta patientId és obligatori i ha de coincidir amb el pacient del document.
+    DOCUMENT_FILE_NOT_FOUND: Fitxer no trobat al servidor.
+    DOCUMENT_FILE_REQUIRED: No s''ha enviat cap fitxer.
+    DOCUMENT_FILE_TOO_LARGE: El fitxer supera el límit de mida permès.
+    DOCUMENT_FILE_TOO_LARGE_BYTES: 'El fitxer pujat supera el màxim configurat de %max_bytes% bytes.'
+    DOCUMENT_FILE_UPLOAD_ERROR: S''ha detectat un error en la pujada.
+    DOCUMENT_PATIENT_REQUIRED: 'El camp patient és obligatori i ha de ser la IRI absoluta del pacient.'
+    DOCUMENT_PATIENT_ABSOLUTE_IRI_REQUIRED: 'El camp patient ha de ser exactament "%base_url%/api/patients/{id}" (IRI absoluta que coincideixi amb API_BASE_URL).'
+    DOCUMENT_FILE_EMPTY: El fitxer pujat està buit.
+    DOCUMENT_FILE_EXTENSION_NOT_ALLOWED: L''extensió del fitxer no està permesa.
+    DOCUMENT_FILE_MIME_NOT_ALLOWED: 'El tipus MIME del fitxer (%mime_type%) no està permès.'
+    DOCUMENT_FILE_MIME_EXTENSION_MISMATCH: 'El tipus MIME detectat (%mime_type%) no coincideix amb l''extensió del fitxer (s''esperava %expected_mime%).'
+    DOCUMENT_TYPE_NOT_ALLOWED: 'El tipus declarat (%type%) no està permès.'
+    DOCUMENT_TYPE_FILE_MISMATCH: 'El tipus declarat (%type%) no coincideix amb el fitxer pujat (s''esperava %expected_type%).'
+    DOCUMENT_FILE_STORE_FAILED: No s''ha pogut desar el fitxer al servidor.
+    INVALID_JSON: Cos JSON no vàlid.
+    DOCUMENT_DESCRIPTION_REQUIRED: El camp description és obligatori per actualitzar les notes clíniques.
+    DOCUMENT_DESCRIPTION_INVALID: El camp description ha de ser una cadena o null.
+    DOCUMENT_ACCESS_FORBIDDEN: No teniu permís per accedir als documents del pacient.
+    DOCUMENT_NOT_FOUND: Document no trobat.
+    DOCUMENT_PATIENT_MISMATCH: El document no pertany al pacient indicat.
+
+    AUTH_VALIDATION_FAILED: 'Error de validació.'
+    AUTH_FIELD_BLANK: 'Aquest valor no ha d''estar buit.'
+    AUTH_INVALID_CREDENTIALS: 'Credencials no vàlides.'
+    AUTH_UNAUTHORIZED: No autoritzat.
+    AUTH_REGISTER_FIELDS_REQUIRED: 'Cal fullName, email i password.'
+    AUTH_PASSWORD_MIN_LENGTH: 'La contrasenya ha de tenir com a mínim 8 caràcters.'
+    EMAIL_ALREADY_REGISTERED: 'El correu electrònic ja està registrat.'
+    AUTH_FULL_NAME_REQUIRES_SURNAME: 'El nom complet ha d''incloure nom i cognoms.'
+
+    USER_ACCESS_PROFILE_FORBIDDEN: 'Només podeu accedir al vostre perfil d''usuari.'
+    USER_UPDATE_PROFILE_FORBIDDEN: 'Només podeu actualitzar el vostre perfil d''usuari.'
+    USER_DELETE_ADMIN_ONLY: 'Només els administradors poden eliminar usuaris.'
+
+    PATIENT_DOCUMENTS_LIST_FORBIDDEN: 'No teniu permís per llistar els documents del pacient.'
+    PATIENT_APPOINTMENTS_LIST_FORBIDDEN: 'No teniu permís per llistar les cites del pacient.'
+    PATIENT_UPDATE_FORBIDDEN: 'No teniu permís per actualitzar pacients.'
+    PATIENTS_NONE_BY_IDENTITY: 'No s''han trobat pacients.'
+    PATIENT_CREATE_MISSING_FIELDS: 'Falten camps obligatoris.'
+    PATIENT_CREATE_ALREADY_EXISTS: 'El pacient ja existeix.'
+    PATIENT_INVALID_REGISTRATION_DATE: 'Format de registrationDate no vàlid.'
+
+    PATIENT_ALLERGIES_REQUIRED: 'Cal la informació d''al·lèrgies a medicaments (medicationAllergies o medication_allergies).'
+    PATIENT_ALLERGIES_KEYS_MISMATCH: 'medicationAllergies i medication_allergies han de coincidir si s''envien tots dos.'
+    PATIENT_PROFILE_IMAGE_NOT_STRING: 'profile_image ha de ser una cadena o null.'
+    PATIENT_PROFILE_IMAGE_TOO_LARGE: 'El contingut de profile_image és massa gran (màxim %max_chars% caràcters).'
+    PATIENT_PROFILE_IMAGE_INVALID_DATA_URL: 'profile_image ha de ser una data URL (data:image/*;base64,...).'
+    ODO_SYNC_ENTRIES_INVALID: 'Entrades de sincronització no vàlides: %reason%'
+
+    APPOINTMENT_DOCTOR_SLOT_CONFLICT: 'El metge ja té una cita en aquest horari.'
+
+    TREATMENT_INVALID_JSON: 'Cos de la petició no vàlid.'
+    TREATMENT_CREATED_LINKED: 'Tractament creat i vinculat a la cita correctament.'
+    TREATMENT_NOT_FOUND: 'Tractament no trobat.'
+    TREATMENT_UPDATED_OK: 'Tractament actualitzat correctament.'
+    TREATMENT_DELETED_OK: 'Tractament eliminat correctament.'
+    TREATMENT_ALREADY_FINISHED_OR_MISSING: 'Tractament no trobat o ja finalitzat.'
+    TREATMENT_FINISHED_OK: 'Tractament marcat com a finalitzat.'
+
+    ODO_PATHOLOGY_ADDED_OK: 'Patologia afegida a la peça correctament.'
+    ODO_TREATMENT_SYNC_OK: 'Tractament creat i visita sincronitzada correctament.'
+    ODO_DETAILS_SYNC_OK: 'Detalls de l''odontograma sincronitzats correctament.'
+    ODO_NOT_FOUND: 'Odontograma no trobat.'
+    ODO_DETAIL_CREATE_FAILED: 'No s''ha pogut crear el detall de l''odontograma.'
+    ODO_TREATMENT_SYNC_FAILED: 'No s''ha pogut crear el tractament ni sincronitzar la visita.'
+    ODO_DETAILS_SYNC_FAILED: 'No s''han pogut sincronitzar els detalls de l''odontograma.'
+    ODO_PATIENT_VISIT_IDS_REQUIRED: 'patient_id i visit_id són obligatoris.'
+    ODO_VISIT_ID_REQUIRED: 'visit_id és obligatori.'
+    ODO_APPOINTMENT_NOT_FOUND: 'Cita no trobada.'
+    ODO_APPOINTMENT_PATIENT_MISMATCH: 'La cita no pertany al pacient de l''odontograma.'
+    ODO_ENTRIES_MUST_BE_ARRAY: 'entries ha de ser un array.'
+    ODO_CREATE_OR_RECOVER_FAILED: 'No s''ha pogut crear ni recuperar l''odontograma.'
+    ODO_PATHOLOGY_TOOTH_REQUIRED: 'pathology_id i tooth_number són obligatoris.'
+    ODO_FACES_MUST_BE_ARRAY: 'faces ha de ser un array.'
+    ODO_PATHOLOGY_NOT_FOUND: 'Patologia no trobada.'
+    ODO_DETAIL_NOT_FOUND: 'Detall de l''odontograma no trobat.'
+    ODO_DETAIL_DELETE_FAILED: 'No s''ha pogut eliminar el detall de l''odontograma.'
+    ODO_CREATED_SUCCESS: 'Odontograma creat correctament.'
+    ODO_REUSED_SUCCESS: 'S''ha reutilitzat l''odontograma obert correctament.'
