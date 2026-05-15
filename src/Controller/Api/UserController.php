@@ -115,6 +115,13 @@ final class UserController extends AbstractController
     )]
     public function create(Request $request): JsonResponse
     {
+        if (!$this->isGranted('ROLE_ADMIN')) {
+            return $this->json(
+                ['error' => 'Forbidden', 'message' => 'Only administrators can create users.'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
         $user = new User();
         $form = $this->createForm(UserType::class, $user, ['require_password' => true, 'csrf_protection' => false]);
         $requestData = self::getRequestData($request);
@@ -213,6 +220,21 @@ final class UserController extends AbstractController
     )]
     public function delete(User $user): JsonResponse
     {
+        if (!$this->isGranted('ROLE_ADMIN') && !$this->canAccessUser($user)) {
+            return $this->json(
+                ['error' => 'Forbidden', 'message' => 'You can only delete your own user account.'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
+        $current = $this->getUser();
+        if ($current instanceof User && $current->getId() === $user->getId()) {
+            return $this->json(
+                ['error' => 'Forbidden', 'message' => 'Use DELETE /api/auth/me to delete your own account.'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
         $this->entityManager->remove($user);
         $this->entityManager->flush();
 
