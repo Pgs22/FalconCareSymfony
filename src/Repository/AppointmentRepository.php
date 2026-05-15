@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\Appointment;
+use App\Entity\Patient;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -18,20 +19,20 @@ class AppointmentRepository extends ServiceEntityRepository
 
     public function findByDate(\DateTimeInterface $date): array
     {
-        return $this->createQueryBuilder('a')
-            ->andWhere('a.visitDate = :date') 
+        return $this->createAgendaQueryBuilder()
+            ->andWhere('a.visitDate = :date')
             ->setParameter('date', $date->format('Y-m-d'))
             ->orderBy('a.visitTime', 'ASC')
             ->getQuery()
             ->getResult();
-    }    
+    }
     
     public function findByWeek(\DateTime $date): array
     {
         $startOfWeek = (clone $date)->modify('monday this week')->setTime(0, 0);
         $endOfWeek = (clone $date)->modify('sunday this week')->setTime(23, 59, 59);
 
-        return $this->createQueryBuilder('a')
+        return $this->createAgendaQueryBuilder()
             ->andWhere('a.visitDate >= :start')
             ->andWhere('a.visitDate <= :end')
             ->setParameter('start', $startOfWeek)
@@ -40,6 +41,43 @@ class AppointmentRepository extends ServiceEntityRepository
             ->addOrderBy('a.visitTime', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * @return list<Appointment>
+     */
+    public function findByPatient(Patient $patient): array
+    {
+        return $this->createAgendaQueryBuilder()
+            ->andWhere('a.patient = :patient')
+            ->setParameter('patient', $patient)
+            ->orderBy('a.visitDate', 'DESC')
+            ->addOrderBy('a.visitTime', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * @return list<Appointment>
+     */
+    public function findByPatientAndDate(Patient $patient, \DateTimeInterface $date): array
+    {
+        return $this->createAgendaQueryBuilder()
+            ->andWhere('a.patient = :patient')
+            ->andWhere('a.visitDate = :date')
+            ->setParameter('patient', $patient)
+            ->setParameter('date', $date->format('Y-m-d'))
+            ->orderBy('a.visitTime', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    private function createAgendaQueryBuilder(): \Doctrine\ORM\QueryBuilder
+    {
+        return $this->createQueryBuilder('a')
+            ->leftJoin('a.patient', 'p')->addSelect('p')
+            ->leftJoin('a.doctor', 'd')->addSelect('d')
+            ->leftJoin('a.box', 'b')->addSelect('b');
     }
 
 

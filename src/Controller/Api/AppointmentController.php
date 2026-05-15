@@ -6,7 +6,9 @@ use App\Entity\Appointment;
 use App\Entity\Patient;
 use App\Form\AppointmentType;
 use App\Repository\AppointmentRepository;
+use App\Repository\PatientRepository;
 use App\Entity\Odontogram;
+use App\Service\AppointmentListSerializer;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,6 +20,11 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 #[Route('/api/appointment')]
 final class AppointmentController extends AbstractController
 {
+    public function __construct(
+        private readonly AppointmentListSerializer $appointmentListSerializer,
+    ) {
+    }
+
     private const STATUS_SCHEDULED = 'Programada';
     private const STATUS_MISSING_CONSENT = 'Falta consentiment';
     private const STATUS_IN_PROGRESS = 'En curs';
@@ -58,62 +65,51 @@ final class AppointmentController extends AbstractController
     }
 
     #[Route('/index', name: 'app_appointment_index', methods: ['GET'])]
-    public function index(Request $request, AppointmentRepository $repo): JsonResponse 
-    {
-        $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
-        $fecha = new \DateTime($fechaStr);
-
-        $appointments = $repo->findByDate($fecha);
-
-        return $this->json($this->serializeAppointments($appointments));
-    }
-
-    private function serializeAppointments(array $appointments): array
-        {
-        $result = [];
-        foreach ($appointments as $appointment) {
-            $reason = $appointment->getConsultationReason() ?? '';
-            $status = $this->normalizeAppointmentStatus($appointment->getStatus());
-            
-            $isUrgency = $appointment->isUrgency() || str_contains(strtolower($reason), 'urgència') || str_contains(strtolower($reason), 'urgencia');
-            $isFirstVisit = $appointment->isFirstVisit() || str_contains(strtolower($reason), 'primera visita');
-
-            if ($status === 'Finalitzada') {
-                $color = '#9e9e9e';
-            } elseif ($isUrgency) {
-                $color = '#e91e63';
-            } elseif ($isFirstVisit) {
-                $color = '#9c27b0';
-            } else {
-                $color = '#00bcd4';
+    public function index(
+        Request $request,
+        AppointmentRepository $repo,
+        PatientRepository $patientRepository,
+    ): JsonResponse {
+        $patientIdRaw = $request->query->get('patientId');
+        if ($patientIdRaw !== null && trim((string) $patientIdRaw) !== '') {
+            $patientId = filter_var($patientIdRaw, \FILTER_VALIDATE_INT);
+            if ($patientId === false || $patientId <= 0) {
+                return $this->json([
+                    'ok' => false,
+                    'code' => 'VALIDATION_ERROR',
+                    'error' => ['field' => 'patientId', 'message' => 'patientId must be a positive integer'],
+                ], Response::HTTP_BAD_REQUEST);
             }
 
-            $result[] = [
-                'id' => $appointment->getId(),
-                'date' => $appointment->getVisitDate()->format('Y-m-d'),
-                'time' => $appointment->getVisitTime() ? $appointment->getVisitTime()->format('H:i') : '--:--',
-                'duration' => $appointment->getDurationMinutes() ?? 30,
-                'cleaningTime' => $appointment->getCleaningMinutes(),
-                'cleaning_time' => $appointment->getCleaningMinutes(),
-                'cleaningMinutes' => $appointment->getCleaningMinutes(),
-                'totalBlockTime' => $appointment->getTotalDurationWithCleaning(),
-                'patientName' => $appointment->getPatient() 
-                    ? $appointment->getPatient()->getFirstName() . ' ' . $appointment->getPatient()->getLastName() 
-                    : 'Sense Pacient',
-                'doctorName' => $appointment->getDoctor() 
-                    ? trim($appointment->getDoctor()->getFirstName() . ' ' . $appointment->getDoctor()->getLastNames())
-                    : 'Sense Doctor',
-                'doctorId' => $appointment->getDoctor() ? $appointment->getDoctor()->getId() : null,
-                'boxId' => $appointment->getBox() ? $appointment->getBox()->getId() : null,
-                'box' => $appointment->getBox() ? $appointment->getBox()->getBoxName() : 'Sense Box',
-                'reason' => $reason,
-                'status' => $status,
-                'color' => $color,
-                'isUrgency' => $isUrgency,
-                'isFirstVisit' => $isFirstVisit
-            ];
+            $patient = $patientRepository->findById($patientId);
+            if ($patient === null) {
+                return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);
+            }
+
+            $fechaStr = $request->query->get('date');
+            if ($fechaStr !== null && trim((string) $fechaStr) !== '') {
+                try {
+                    $fecha = new \DateTime((string) $fechaStr);
+                    $appointments = $repo->findByPatientAndDate($patient, $fecha);
+                } catch (\Throwable) {
+                    return $this->json([
+                        'ok' => false,
+                        'code' => 'INVALID_DATE',
+                        'error' => ['field' => 'date', 'message' => 'Invalid date format'],
+                    ], Response::HTTP_BAD_REQUEST);
+                }
+            } else {
+                $appointments = $repo->findByPatient($patient);
+            }
+
+            return $this->json($this->appointmentListSerializer->serializeAgendaBlocks($appointments));
         }
-        return $result;
+
+        $fechaStr = $request->query->get('date', (new \DateTime())->format('Y-m-d'));
+        $fecha = new \DateTime((string) $fechaStr);
+        $appointments = $repo->findByDate($fecha);
+
+        return $this->json($this->appointmentListSerializer->serializeAgendaBlocks($appointments));
     }
 
     #[Route('/weekly', name: 'app_appointment_weekly', methods: ['GET'])]
@@ -135,7 +131,7 @@ final class AppointmentController extends AbstractController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        return $this->json($this->serializeAppointments($appointments));
+        return $this->json($this->appointmentListSerializer->serializeAgendaBlocks($appointments));
     }
 
     #[Route('/statuses', name: 'app_appointment_statuses', methods: ['GET'])]
@@ -285,6 +281,15 @@ final class AppointmentController extends AbstractController
             'patientName' => trim(($patient->getFirstName() ?? '') . ' ' . ($patient->getLastName() ?? '')),
             'medicationAllergies' => $allergies,
         ];
+    }
+
+    #[Route('', name: 'app_appointment_create_fallback', methods: ['POST'])]
+    public function createFallback(
+        Request $request,
+        EntityManagerInterface $entityManager,
+        AppointmentRepository $repository,
+    ): JsonResponse {
+        return $this->create($request, $entityManager, $repository);
     }
 
     #[Route('/create', name: 'app_appointment_create', methods: ['POST'])]
