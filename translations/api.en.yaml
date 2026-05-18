@@ -1,0 +1,95 @@
+http:
+    '400': Bad Request
+    '401': Unauthorized
+    '403': Forbidden
+    '404': Not Found
+    '409': Conflict
+    '413': Payload Too Large
+    '422': Unprocessable Content
+    '500': Internal Server Error
+
+error:
+    DOCUMENT_PATIENT_FILTER_REQUIRED: 'Provide patientId, patient.id, patient_id, patient[id], or patient (IRI). A patient filter is required; unfiltered document access is disabled.'
+    PATIENT_NOT_FOUND: Patient not found.
+    DATE_REQUIRED: The date parameter is required.
+    INVALID_DATE: 'Invalid date format. Use Y-m-d.'
+    DOCUMENT_PATIENT_ID_REQUIRED: The patientId query parameter is required and must match the document''s patient.
+    DOCUMENT_FILE_NOT_FOUND: File not found on the server.
+    DOCUMENT_FILE_REQUIRED: No file was provided.
+    DOCUMENT_FILE_TOO_LARGE: The file exceeds the allowed size limit.
+    DOCUMENT_FILE_TOO_LARGE_BYTES: 'The uploaded file exceeds the configured maximum of %max_bytes% bytes.'
+    DOCUMENT_FILE_UPLOAD_ERROR: An upload error was detected.
+    DOCUMENT_PATIENT_REQUIRED: 'The patient field is required and must be the absolute patient IRI.'
+    DOCUMENT_PATIENT_ABSOLUTE_IRI_REQUIRED: 'The patient field must be exactly "%base_url%/api/patients/{id}" (absolute IRI matching API_BASE_URL).'
+    DOCUMENT_FILE_EMPTY: The uploaded file is empty.
+    DOCUMENT_FILE_EXTENSION_NOT_ALLOWED: This file extension is not allowed.
+    DOCUMENT_FILE_MIME_NOT_ALLOWED: 'The file MIME type (%mime_type%) is not allowed.'
+    DOCUMENT_FILE_MIME_EXTENSION_MISMATCH: 'The detected MIME type (%mime_type%) does not match the file extension (expected %expected_mime%).'
+    DOCUMENT_TYPE_NOT_ALLOWED: 'The declared type (%type%) is not allowed.'
+    DOCUMENT_TYPE_FILE_MISMATCH: 'The declared type (%type%) does not match the uploaded file (expected %expected_type%).'
+    DOCUMENT_FILE_STORE_FAILED: The file could not be stored on the server.
+    INVALID_JSON: Invalid JSON body.
+    DOCUMENT_DESCRIPTION_REQUIRED: The description field is required to update clinical notes.
+    DOCUMENT_DESCRIPTION_INVALID: The description field must be a string or null.
+    DOCUMENT_ACCESS_FORBIDDEN: You do not have permission to access patient documents.
+    DOCUMENT_NOT_FOUND: Document not found.
+    DOCUMENT_PATIENT_MISMATCH: The document does not belong to the indicated patient.
+
+    AUTH_VALIDATION_FAILED: 'Validation failed.'
+    AUTH_FIELD_BLANK: 'This value should not be blank.'
+    AUTH_INVALID_CREDENTIALS: 'Invalid credentials.'
+    AUTH_UNAUTHORIZED: Unauthorized.
+    AUTH_REGISTER_FIELDS_REQUIRED: 'fullName, email and password are required.'
+    AUTH_PASSWORD_MIN_LENGTH: 'Password must be at least 8 characters.'
+    EMAIL_ALREADY_REGISTERED: 'Email already registered.'
+    AUTH_FULL_NAME_REQUIRES_SURNAME: 'Full name must include name and surname.'
+
+    USER_ACCESS_PROFILE_FORBIDDEN: 'You can only access your own user profile.'
+    USER_UPDATE_PROFILE_FORBIDDEN: 'You can only update your own user profile.'
+    USER_DELETE_ADMIN_ONLY: 'Only administrators can delete users.'
+
+    PATIENT_DOCUMENTS_LIST_FORBIDDEN: 'You do not have permission to list patient documents.'
+    PATIENT_APPOINTMENTS_LIST_FORBIDDEN: 'You do not have permission to list patient appointments.'
+    PATIENT_UPDATE_FORBIDDEN: 'You do not have permission to update patients.'
+    PATIENTS_NONE_BY_IDENTITY: 'No patients found.'
+    PATIENT_CREATE_MISSING_FIELDS: 'Missing required fields.'
+    PATIENT_CREATE_ALREADY_EXISTS: 'Patient already exists.'
+    PATIENT_INVALID_REGISTRATION_DATE: 'Invalid registrationDate format.'
+
+    PATIENT_ALLERGIES_REQUIRED: 'Medication allergy information is required (medicationAllergies or medication_allergies).'
+    PATIENT_ALLERGIES_KEYS_MISMATCH: 'medicationAllergies and medication_allergies must match when both are provided.'
+    PATIENT_PROFILE_IMAGE_NOT_STRING: 'profile_image must be a string or null.'
+    PATIENT_PROFILE_IMAGE_TOO_LARGE: 'profile_image payload is too large (maximum %max_chars% characters).'
+    PATIENT_PROFILE_IMAGE_INVALID_DATA_URL: 'profile_image must be a data URL (data:image/*;base64,...).'
+    ODO_SYNC_ENTRIES_INVALID: 'Invalid sync entries: %reason%'
+
+    APPOINTMENT_DOCTOR_SLOT_CONFLICT: 'The doctor already has an appointment at that time.'
+
+    TREATMENT_INVALID_JSON: 'Invalid request body.'
+    TREATMENT_CREATED_LINKED: 'Treatment created and linked to the appointment successfully.'
+    TREATMENT_NOT_FOUND: 'Treatment not found.'
+    TREATMENT_UPDATED_OK: 'Treatment updated successfully.'
+    TREATMENT_DELETED_OK: 'Treatment deleted successfully.'
+    TREATMENT_ALREADY_FINISHED_OR_MISSING: 'Treatment not found or already finished.'
+    TREATMENT_FINISHED_OK: 'Treatment marked as finished.'
+
+    ODO_PATHOLOGY_ADDED_OK: 'Pathology added to tooth successfully.'
+    ODO_TREATMENT_SYNC_OK: 'Treatment created and visit synchronized successfully.'
+    ODO_DETAILS_SYNC_OK: 'Odontogram details synchronized successfully.'
+    ODO_NOT_FOUND: 'Odontogram not found.'
+    ODO_DETAIL_CREATE_FAILED: 'Could not create the odontogram detail.'
+    ODO_TREATMENT_SYNC_FAILED: 'Could not create the treatment and sync the visit.'
+    ODO_DETAILS_SYNC_FAILED: 'Could not synchronize the odontogram details.'
+    ODO_PATIENT_VISIT_IDS_REQUIRED: 'patient_id and visit_id are required.'
+    ODO_VISIT_ID_REQUIRED: 'visit_id is required.'
+    ODO_APPOINTMENT_NOT_FOUND: 'Appointment not found.'
+    ODO_APPOINTMENT_PATIENT_MISMATCH: 'The appointment does not belong to the odontogram patient.'
+    ODO_ENTRIES_MUST_BE_ARRAY: 'entries must be an array.'
+    ODO_CREATE_OR_RECOVER_FAILED: 'Could not create or recover the odontogram.'
+    ODO_PATHOLOGY_TOOTH_REQUIRED: 'pathology_id and tooth_number are required.'
+    ODO_FACES_MUST_BE_ARRAY: 'faces must be an array.'
+    ODO_PATHOLOGY_NOT_FOUND: 'Pathology not found.'
+    ODO_DETAIL_NOT_FOUND: 'Odontogram detail not found.'
+    ODO_DETAIL_DELETE_FAILED: 'Could not delete the odontogram detail.'
+    ODO_CREATED_SUCCESS: 'Odontogram created successfully.'
+    ODO_REUSED_SUCCESS: 'Open odontogram reused successfully.'

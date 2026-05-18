@@ -141,6 +141,14 @@ symfony server:start
 - Passwords are handled by Symfony’s **Security** component.
 - `symfony/serializer` is installed to expose entities as JSON (e.g. for an Angular frontend).
 
+### API locale (Angular ↔ Symfony)
+
+For routes under `/api/`, `App\EventSubscriber\ApiLocaleSubscriber` sets `Request::locale` from the **`Accept-Language`** header (or from query **`?locale=`** as an override). Supported codes: **`ca`**, **`es`**, **`en`**, **`fr`**, aligned with the Angular app (`ngx-translate` + `LanguageService`).
+
+- Symfony: `src/EventSubscriber/ApiLocaleSubscriber.php`, translations `translations/api.{ca,es,en,fr}.yaml` (domain `api`), config `config/packages/translation.yaml`.
+- Angular (sibling repo **FalconCare**): sends the header via `src/app/interceptors/locale.interceptor.ts` (see `src/app/app.config.ts`).
+- Contract test: `tests/Controller/Api/ApiAcceptLanguageTest.php`.
+
 ### REST `/api/patients` (Angular / Neon)
 
 - Base path: `/api` (e.g. dev `http://127.0.0.1:8000/api/patients`). JWT Bearer on protected routes.

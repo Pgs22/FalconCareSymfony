@@ -13,7 +13,7 @@ final class PatientMedicationAllergiesResolver
     /**
      * For POST: requires at least one key; values must be non-empty after trim; both keys must match if present.
      *
-     * @return array{ok: true, value: string}|array{ok: false, message: string}
+     * @return array{ok: true, value: string}|array{ok: false, messageKey: string}
      */
     public static function resolveForCreate(array $data): array
     {
@@ -21,16 +21,16 @@ final class PatientMedicationAllergiesResolver
         $hasSnake = \array_key_exists('medication_allergies', $data);
 
         if (!$hasCamel && !$hasSnake) {
-            return ['ok' => false, 'message' => 'Missing required fields'];
+            return ['ok' => false, 'messageKey' => 'PATIENT_ALLERGIES_REQUIRED'];
         }
 
         $r = self::mergeTwoKeys($data, $hasCamel, $hasSnake);
-        if ($r['error'] !== null) {
-            return ['ok' => false, 'message' => $r['error']];
+        if ($r['errorKey'] !== null) {
+            return ['ok' => false, 'messageKey' => $r['errorKey']];
         }
 
         if ($r['value'] === '') {
-            return ['ok' => false, 'message' => 'Missing required fields'];
+            return ['ok' => false, 'messageKey' => 'PATIENT_ALLERGIES_REQUIRED'];
         }
 
         return ['ok' => true, 'value' => $r['value']];
@@ -39,7 +39,7 @@ final class PatientMedicationAllergiesResolver
     /**
      * For PUT partial update: returns null if neither key sent; otherwise resolved value or error if mismatch.
      *
-     * @return array{apply: false}|array{apply: true, value: string}|array{apply: true, error: string}
+     * @return array{apply: false}|array{apply: true, value: string}|array{apply: true, errorKey: string}
      */
     public static function resolveForPartialUpdate(array $data): array
     {
@@ -51,15 +51,15 @@ final class PatientMedicationAllergiesResolver
         }
 
         $r = self::mergeTwoKeys($data, $hasCamel, $hasSnake);
-        if ($r['error'] !== null) {
-            return ['apply' => true, 'error' => $r['error']];
+        if ($r['errorKey'] !== null) {
+            return ['apply' => true, 'errorKey' => $r['errorKey']];
         }
 
         return ['apply' => true, 'value' => $r['value']];
     }
 
     /**
-     * @return array{value: string, error: ?string}
+     * @return array{value: string, errorKey: ?string}
      */
     private static function mergeTwoKeys(array $data, bool $hasCamel, bool $hasSnake): array
     {
@@ -67,17 +67,17 @@ final class PatientMedicationAllergiesResolver
             $v1 = self::normalizeString($data['medicationAllergies'] ?? null);
             $v2 = self::normalizeString($data['medication_allergies'] ?? null);
             if ($v1 !== $v2) {
-                return ['value' => '', 'error' => 'medicationAllergies and medication_allergies must match when both are provided'];
+                return ['value' => '', 'errorKey' => 'PATIENT_ALLERGIES_KEYS_MISMATCH'];
             }
 
-            return ['value' => $v1, 'error' => null];
+            return ['value' => $v1, 'errorKey' => null];
         }
 
         if ($hasCamel) {
-            return ['value' => self::normalizeString($data['medicationAllergies'] ?? null), 'error' => null];
+            return ['value' => self::normalizeString($data['medicationAllergies'] ?? null), 'errorKey' => null];
         }
 
-        return ['value' => self::normalizeString($data['medication_allergies'] ?? null), 'error' => null];
+        return ['value' => self::normalizeString($data['medication_allergies'] ?? null), 'errorKey' => null];
     }
 
     private static function normalizeString(mixed $v): string
