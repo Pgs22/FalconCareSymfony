@@ -48,7 +48,7 @@ final class AppointmentHistoryPayloadBuilder
             'date' => $visitDate->format('Y-m-d'),
             'created_at' => $iso,
             'end_time' => $endIso,
-            'status' => $a->getStatus(),
+            'status' => self::normalizeStatus($a->getStatus()),
             'durationMinutes' => $a->getDurationMinutes(),
             'patient' => [
                 '@id' => '/api/patients/'.$pid,
@@ -87,5 +87,21 @@ final class AppointmentHistoryPayloadBuilder
         }
 
         return $start->modify('+'.$minutes.' minutes')->format(\DateTimeInterface::ATOM);
+    }
+
+    private static function normalizeStatus(?string $status): string
+    {
+        $status = trim((string) $status);
+
+        if ($status === '') {
+            return 'Programada';
+        }
+
+        return match ($status) {
+            'Encurs' => 'En curs',
+            'Falta Consentiment' => 'Falta consentiment',
+            'Cancel·lada', 'CancelÂ·lada' => 'Cancelada',
+            default => $status,
+        };
     }
 }

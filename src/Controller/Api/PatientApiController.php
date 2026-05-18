@@ -179,9 +179,33 @@ final class PatientApiController extends AbstractController
             return $this->json(['message' => 'No patients found'], Response::HTTP_NOT_FOUND);
         }
 
+        if (\count($patients) === 1) {
+            return $this->json(self::serializePatient($patients[0]), Response::HTTP_OK);
+        }
+
         $data = array_map(static fn (Patient $patient) => self::serializePatient($patient), $patients);
 
         return $this->json($data, Response::HTTP_OK);
+    }
+
+    #[Route('/new', name: 'api_patient_create_quick', methods: ['POST'])]
+    #[OA\Post(
+        path: '/api/patients/new',
+        summary: 'Quick patient create (alias of POST /api/patients)',
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(type: 'object')),
+        responses: [
+            new OA\Response(response: 201, description: 'Created'),
+            new OA\Response(response: 400, description: 'Bad request'),
+        ]
+    )]
+    public function createQuick(
+        Request $request,
+        PatientRepository $repo,
+        UserRepository $userRepository,
+        UserPasswordHasherInterface $passwordHasher,
+    ): JsonResponse {
+        return $this->create($request, $repo, $userRepository, $passwordHasher);
     }
 
     #[Route('', name: 'api_patient_create', methods: ['POST'])]
@@ -399,6 +423,13 @@ final class PatientApiController extends AbstractController
     )]
     public function delete(int $id, PatientRepository $repo): JsonResponse
     {
+        if (!$this->patientRecordsAccess->canAccessPatientClinicalApi()) {
+            return $this->json(
+                ['error' => 'Forbidden', 'message' => 'You do not have permission to delete patients.'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
         $patient = $repo->findById($id);
         if (!$patient) {
             return $this->json(['message' => 'Patient not found'], Response::HTTP_NOT_FOUND);

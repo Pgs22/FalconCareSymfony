@@ -58,6 +58,7 @@ class Appointment
     #[ORM\Column]
     private ?int $durationMinutes = null;
 
+    #[ORM\Column(options: ['default' => self::DEFAULT_CLEANING_MINUTES])]
     private int $cleaningMinutes = self::DEFAULT_CLEANING_MINUTES;
 
     public function getTotalDurationWithCleaning(): int

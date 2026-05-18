@@ -5,9 +5,10 @@ namespace App\Controller\Api;
 use App\Entity\Doctor;
 use App\Entity\User;
 use App\Repository\DoctorRepository;
-use Doctrine\ORM\EntityManagerInterface;
 use App\Repository\UserRepository;
 use App\Security\JwtTokenManager;
+use App\Util\PatientProfileImageResolver;
+use Doctrine\ORM\EntityManagerInterface;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -98,17 +99,41 @@ final class AuthController extends AbstractController
         }
 
         $token = $this->jwtTokenManager->createToken($user);
+        $userPayload = $this->buildAuthUserPayload($user);
 
         return $this->json([
             'accessToken' => $token,
+            'access_token' => $token,
             'tokenType' => 'Bearer',
+            'token_type' => 'Bearer',
             'expiresIn' => $this->jwtTokenManager->getTtlSeconds(),
-            'user' => [
-                'id' => $user->getId(),
-                'email' => $user->getUserIdentifier(),
-                'roles' => $user->getRoles(),
-            ],
+            'expires_in' => $this->jwtTokenManager->getTtlSeconds(),
+            'user' => $userPayload,
         ], Response::HTTP_OK);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildAuthUserPayload(User $user): array
+    {
+        $profileImage = PatientProfileImageResolver::normalizeForApi($user->getProfileImage());
+        $fullName = null;
+
+        $doctor = $this->doctorRepository->findOneBy(['email' => $user->getUserIdentifier()]);
+        if ($doctor instanceof Doctor) {
+            $fullName = trim($doctor->getFirstName() . ' ' . $doctor->getLastNames());
+        }
+
+        return [
+            'id' => $user->getId(),
+            'email' => $user->getUserIdentifier(),
+            'roles' => $user->getRoles(),
+            'fullName' => $fullName,
+            'profileImageUrl' => $profileImage,
+            'profile_image_url' => $profileImage,
+            'profile_image' => $profileImage,
+        ];
     }
 
     #[Route('/register-doctor', name: 'api_auth_register_doctor', methods: ['POST'])]

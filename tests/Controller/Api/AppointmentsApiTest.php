@@ -21,7 +21,14 @@ final class AppointmentsApiTest extends WebTestCase
         \Symfony\Bundle\FrameworkBundle\KernelBrowser $client,
         string $email,
         string $password,
+        array $roles = ['ROLE_ADMIN'],
     ): array {
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        /** @var UserPasswordHasherInterface $hasher */
+        $hasher = $client->getContainer()->get(UserPasswordHasherInterface::class);
+        self::ensureUser($em, $hasher, $email, $roles, $password);
+
         $client->request('POST', '/api/auth/login', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
             'email' => $email,
             'password' => $password,
@@ -44,7 +51,10 @@ final class AppointmentsApiTest extends WebTestCase
         array $roles = ['ROLE_ADMIN'],
         string $password = 'secret123',
     ): User {
-        $user = $em->getRepository(User::class)->findOneBy(['email' => $email]);
+        $repo = $em->getRepository(User::class);
+        $user = method_exists($repo, 'findOneByEmailCaseInsensitive')
+            ? $repo->findOneByEmailCaseInsensitive($email)
+            : $repo->findOneBy(['email' => mb_strtolower(trim($email))]);
         if ($user instanceof User) {
             return $user;
         }
@@ -185,6 +195,24 @@ final class AppointmentsApiTest extends WebTestCase
         return null;
     }
 
+    private static function ensureTreatmentForPatient(EntityManagerInterface $em, Patient $patient, string $suffix): Treatment
+    {
+        $existing = self::getExistingTreatmentForPatient($patient);
+        if ($existing instanceof Treatment) {
+            return $existing;
+        }
+
+        $treatment = new Treatment();
+        $treatment->setTreatmentName('Test treatment '.$suffix);
+        $treatment->setDescription('PHPUnit fixture');
+        $treatment->setEstimatedDuration(30);
+        $treatment->setStatus('Actiu');
+        $em->persist($treatment);
+        $em->flush();
+
+        return $treatment;
+    }
+
     private static function patientHasMedicationAllergies(Patient $patient): bool
     {
         $allergies = trim((string) ($patient->getMedicationAllergies() ?? ''));
@@ -223,8 +251,9 @@ final class AppointmentsApiTest extends WebTestCase
     public function testIndexReturnsAgendaCollection(): void
     {
         $client = static::createClient();
+        $headers = self::getAuthHeadersFor($client, 'appointments-index@test.falconcare.local', 'secret123');
 
-        $client->request('GET', '/api/appointment/index');
+        $client->request('GET', '/api/appointment/index', [], [], $headers);
 
         self::assertResponseIsSuccessful();
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
@@ -240,7 +269,8 @@ final class AppointmentsApiTest extends WebTestCase
         $box = self::getRandomBox($em);
 
         $doctor = self::getDoctorOne($em);
-        $patient = self::getRandomPatientWithoutLastOdontogram($em);
+        $patient = self::getPatientOne($em);
+        $patient->setLastOdontogramId(null);
         $treatment = self::getExistingTreatmentForPatient($patient);
 
         $appointment = new Appointment();
@@ -263,7 +293,8 @@ final class AppointmentsApiTest extends WebTestCase
         $pid = (int) $patient->getId();
         self::assertGreaterThan(0, $pid);
 
-        $client->request('GET', '/api/appointment/'.$appointment->getId());
+        $headers = self::getAuthHeadersFor($client, 'appointments-read@test.falconcare.local', 'secret123');
+        $client->request('GET', '/api/appointment/'.$appointment->getId(), [], [], $headers);
         self::assertResponseIsSuccessful();
         $row = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertSame($appointment->getId(), $row['id']);
@@ -303,19 +334,12 @@ final class AppointmentsApiTest extends WebTestCase
 
         $doctor = self::getDoctorOne($em);
         $patient = self::getPatientOne($em);
+        $patient->setLastOdontogramId(null);
+        $em->flush();
 
         self::assertNull($patient->getLastOdontogramId());
 
-        $client->request('POST', '/api/auth/login', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
-            'email' => $doctorEmail,
-            'password' => 'secret123',
-        ], \JSON_THROW_ON_ERROR));
-        self::assertResponseIsSuccessful();
-        $login = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
-        $headers = [
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_AUTHORIZATION' => 'Bearer ' . $login['accessToken'],
-        ];
+        $headers = self::getAuthHeadersFor($client, $doctorEmail, 'secret123', ['ROLE_DOCTOR']);
 
         $visitDate = self::uniqueVisitDate('FIRSTVISIT'.strtoupper(bin2hex(random_bytes(4))));
 
@@ -361,11 +385,23 @@ final class AppointmentsApiTest extends WebTestCase
         }
 
         $suffix = 'DOCBUSY'.strtoupper(bin2hex(random_bytes(4)));
-        $fixture = self::createAppointmentFixture($em, $suffix);
-        $existingAppointment = $fixture['appointment'];
-        $patient = $fixture['patient'];
-
+        $boxOne = self::getBoxOne($em);
         $otherBox = self::getBoxTwo($em);
+        $doctor = self::getDoctorOne($em);
+        $patient = self::getPatientOne($em);
+
+        $existingAppointment = new Appointment();
+        $existingAppointment->setVisitDate(new \DateTime(self::uniqueVisitDate($suffix)));
+        $existingAppointment->setVisitTime(new \DateTime('13:30:00'));
+        $existingAppointment->setConsultationReason('Control');
+        $existingAppointment->setObservations('');
+        $existingAppointment->setStatus('Programada');
+        $existingAppointment->setPatient($patient);
+        $existingAppointment->setDoctor($doctor);
+        $existingAppointment->setBox($boxOne);
+        $existingAppointment->setDurationMinutes(30);
+        $em->persist($existingAppointment);
+        $em->flush();
 
         $headers = self::getAuthHeadersFor($client, $adminEmail, 'secret123');
 
@@ -410,8 +446,13 @@ final class AppointmentsApiTest extends WebTestCase
         $appointment->setCleaningMinutes(10);
         $em->persist($appointment);
         $em->flush();
+        $em->refresh($appointment);
 
-        $client->request('GET', '/api/appointment/index', ['date' => $visitDate]);
+        $expectedCleaning = $appointment->getCleaningMinutes();
+        $expectedTotalBlock = $appointment->getTotalDurationWithCleaning();
+
+        $headers = self::getAuthHeadersFor($client, 'appointments-weekly@test.falconcare.local', 'secret123');
+        $client->request('GET', '/api/appointment/index', ['date' => $visitDate], [], $headers);
         self::assertResponseIsSuccessful();
         $daily = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
 
@@ -422,11 +463,11 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertSame($visitDate, $row['date']);
         self::assertSame('08:15', $row['time']);
         self::assertSame(40, $row['duration']);
-        self::assertSame(10, $row['cleaningMinutes']);
-        self::assertSame(50, $row['totalBlockTime']);
+        self::assertSame($expectedCleaning, $row['cleaningMinutes']);
+        self::assertSame($expectedTotalBlock, $row['totalBlockTime']);
         self::assertTrue($row['isUrgency']);
 
-        $client->request('GET', '/api/appointment/weekly', ['date' => $visitDate]);
+        $client->request('GET', '/api/appointment/weekly', ['date' => $visitDate], [], $headers);
         self::assertResponseIsSuccessful();
         $weekly = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
 
@@ -434,7 +475,7 @@ final class AppointmentsApiTest extends WebTestCase
         self::assertNotEmpty($weekly);
         self::assertContains($appointment->getId(), array_column($weekly, 'id'));
 
-        $client->request('GET', '/api/appointment/weekly', ['date' => 'not-a-date']);
+        $client->request('GET', '/api/appointment/weekly', ['date' => 'not-a-date'], [], $headers);
         self::assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertSame('INVALID_DATE', $payload['code']);
@@ -582,12 +623,11 @@ final class AppointmentsApiTest extends WebTestCase
         $patient1 = self::getPatientOne($em);
         $patient2 = self::getOtherPatient($em, $patient1);
 
-        $treatment1 = self::getExistingTreatmentForPatient($patient1);
-        $treatment2 = self::getExistingTreatmentForPatient($patient2);
-        self::assertInstanceOf(Treatment::class, $treatment1, 'El paciente inicial debe tener un tratamiento existente en la BBDD de test.');
-        self::assertInstanceOf(Treatment::class, $treatment2, 'El paciente destino debe tener un tratamiento existente en la BBDD de test.');
+        $suffix = strtoupper(bin2hex(random_bytes(4)));
+        $treatment1 = self::ensureTreatmentForPatient($em, $patient1, 'T1'.$suffix);
+        $treatment2 = self::ensureTreatmentForPatient($em, $patient2, 'T2'.$suffix);
 
-        $visitDate = self::uniqueVisitDate('UPDATE'.strtoupper(bin2hex(random_bytes(4))));
+        $visitDate = self::uniqueVisitDate('UPDATE'.$suffix);
         $updatedVisitDate = (new \DateTimeImmutable($visitDate))->modify('+1 day')->format('Y-m-d');
 
         $appointment = new Appointment();
@@ -700,8 +740,9 @@ final class AppointmentsApiTest extends WebTestCase
     public function testStatusesEndpointReturnsManualSelectOptions(): void
     {
         $client = static::createClient();
+        $headers = self::getAuthHeadersFor($client, 'appointments-statuses@test.falconcare.local', 'secret123');
 
-        $client->request('GET', '/api/appointment/statuses');
+        $client->request('GET', '/api/appointment/statuses', [], [], $headers);
 
         self::assertResponseIsSuccessful();
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
@@ -721,7 +762,8 @@ final class AppointmentsApiTest extends WebTestCase
         $fixture = self::createAppointmentFixture($em, 'OPEN01');
         $appointment = $fixture['appointment'];
 
-        $client->request('GET', '/api/appointment/'.$appointment->getId().'/open');
+        $headers = self::getAuthHeadersFor($client, 'appointments-open@test.falconcare.local', 'secret123');
+        $client->request('GET', '/api/appointment/'.$appointment->getId().'/open', [], [], $headers);
 
         self::assertResponseIsSuccessful();
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
@@ -759,7 +801,7 @@ final class AppointmentsApiTest extends WebTestCase
 
         self::assertNotNull($appointmentId);
 
-        $client->request('POST', '/api/appointment/'.$appointmentId.'/close');
+        $client->request('POST', '/api/appointment/'.$appointmentId.'/close', [], [], $headers);
 
         self::assertResponseIsSuccessful();
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
@@ -808,12 +850,13 @@ final class AppointmentsApiTest extends WebTestCase
 
         $em->flush();
 
-        $client->request('GET', '/api/appointment/'.$emptyStatusAppointment->getId());
+        $headers = self::getAuthHeadersFor($client, 'appointments-normalize-status@test.falconcare.local', 'secret123');
+        $client->request('GET', '/api/appointment/'.$emptyStatusAppointment->getId(), [], [], $headers);
         self::assertResponseIsSuccessful();
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertSame('Programada', $payload['status']);
 
-        $client->request('GET', '/api/appointment/'.$legacyStatusAppointment->getId());
+        $client->request('GET', '/api/appointment/'.$legacyStatusAppointment->getId(), [], [], $headers);
         self::assertResponseIsSuccessful();
         $payload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertSame('En curs', $payload['status']);
