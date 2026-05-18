@@ -48,7 +48,18 @@ final class PatientProfileImageApiTest extends WebTestCase
     private static function createPatientViaPost(\Symfony\Bundle\FrameworkBundle\KernelBrowser $client, string $token): array
     {
         $suffix = substr(uniqid('', true), 0, 8);
-        $body = [
+        $body = self::patientPostBody($suffix, ['medicationAllergies' => 'none']);
+        $client->request('POST', '/api/patients', [], [], self::authHeaders($token), json_encode($body, \JSON_THROW_ON_ERROR));
+        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('id', $data);
+
+        return ['id' => (int) $data['id']];
+    }
+
+    private static function patientPostBody(string $suffix, array $overrides = []): array
+    {
+        return array_replace([
             'identityDocument' => 'ID-' . $suffix,
             'firstName' => 'Pat',
             'lastName' => 'Ient',
@@ -59,14 +70,7 @@ final class PatientProfileImageApiTest extends WebTestCase
             'familyHistory' => 'f',
             'healthStatus' => 'h',
             'lifestyleHabits' => 'l',
-            'medicationAllergies' => 'none',
-        ];
-        $client->request('POST', '/api/patients', [], [], self::authHeaders($token), json_encode($body, \JSON_THROW_ON_ERROR));
-        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
-        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
-        self::assertArrayHasKey('id', $data);
-
-        return ['id' => (int) $data['id']];
+        ], $overrides);
     }
 
     public function testPutProfileImagePersistsAndGetReturnsCanonicalAndAliases(): void
@@ -222,5 +226,45 @@ final class PatientProfileImageApiTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertSame('PENICILINA', $data['medicationAllergies']);
+    }
+
+    public function testPostPatientAllowsMissingAllergies(): void
+    {
+        $client = static::createClient();
+        $auth = self::ensureDoctorAndToken($client);
+        $suffix = substr(uniqid('', true), 0, 8);
+
+        $client->request('POST', '/api/patients', [], [], self::authHeaders($auth['token']), json_encode(
+            self::patientPostBody($suffix),
+            \JSON_THROW_ON_ERROR
+        ));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('', $data['medicationAllergies']);
+        self::assertSame('', $data['medication_allergies']);
+        self::assertSame(0, $data['allergiesBitmask']);
+        self::assertSame([], $data['selectedAllergies']);
+    }
+
+    public function testPostPatientAllowsEmptySelectedAllergiesAndEmptyMedicationAllergies(): void
+    {
+        $client = static::createClient();
+        $auth = self::ensureDoctorAndToken($client);
+        $suffix = substr(uniqid('', true), 0, 8);
+
+        $client->request('POST', '/api/patients', [], [], self::authHeaders($auth['token']), json_encode(
+            self::patientPostBody($suffix, [
+                'medication_allergies' => '',
+                'selectedAllergies' => [],
+            ]),
+            \JSON_THROW_ON_ERROR
+        ));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('', $data['medicationAllergies']);
+        self::assertSame(0, $data['allergiesBitmask']);
+        self::assertSame([], $data['selectedAllergies']);
     }
 }
