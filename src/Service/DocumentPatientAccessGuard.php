@@ -12,7 +12,7 @@ use App\Entity\Document;
 final class DocumentPatientAccessGuard
 {
     /**
-     * @return array{status: int, code: string}|null null si el documento existe y pertenece al paciente
+     * @return array{status: int, code: string, message: string}|null null si el documento existe y pertenece al paciente
      */
     public function validateDocumentOwnership(?Document $document, int $patientId): ?array
     {
@@ -20,6 +20,7 @@ final class DocumentPatientAccessGuard
             return [
                 'status' => 404,
                 'code' => 'DOCUMENT_NOT_FOUND',
+                'message' => 'Document not found',
             ];
         }
 
@@ -27,6 +28,7 @@ final class DocumentPatientAccessGuard
             return [
                 'status' => 403,
                 'code' => 'DOCUMENT_PATIENT_MISMATCH',
+                'message' => 'Document does not belong to the indicated patient.',
             ];
         }
 

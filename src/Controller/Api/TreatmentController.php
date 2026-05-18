@@ -2,7 +2,6 @@
 
 namespace App\Controller\Api;
 
-use App\Controller\Api\Concerns\ApiTranslatorTrait;
 use App\Entity\Treatment;
 use App\Repository\TreatmentRepository;
 use App\Repository\AppointmentRepository;
@@ -14,18 +13,11 @@ use Symfony\Component\HttpFoundation\Request;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Contracts\Translation\TranslatorInterface;
 
 
 #[Route('/api/treatments')]
 final class TreatmentController extends AbstractController
 {
-    use ApiTranslatorTrait;
-
-    public function __construct(
-        private readonly TranslatorInterface $translator,
-    ) {
-    }
     /**
      * CREATE: Crea un nuevo tratamiento y lo vincula a la cita abierta en el odontograma.
      */
@@ -39,7 +31,7 @@ final class TreatmentController extends AbstractController
         $data = json_decode($request->getContent(), true);
         
         if (!$data) {
-            return $this->json(['error' => $this->apiTrans('TREATMENT_INVALID_JSON')], 400);
+            return $this->json(['error' => 'Dades invàlides'], 400);
         }
 
         $treatment = new Treatment();
@@ -77,7 +69,7 @@ final class TreatmentController extends AbstractController
         return $this->json([
             'id' => $treatment->getId(),
             'status' => 'success',
-            'message' => $this->apiTrans('TREATMENT_CREATED_LINKED')
+            'message' => 'Tractament creat i vinculat a la cita correctament'
         ]);
     }
 
@@ -87,7 +79,7 @@ final class TreatmentController extends AbstractController
         $treatment = $treatmentRepository->find($id);
 
         if (!$treatment) {
-            return $this->json(['error' => $this->apiTrans('TREATMENT_NOT_FOUND')], 404);
+            return $this->json(['error' => 'Tractament no trobat'], 404);
         }
 
         return $this->json([
@@ -106,7 +98,7 @@ final class TreatmentController extends AbstractController
         $treatment = $treatmentRepository->find($id);
 
         if (!$treatment) {
-            return $this->json(['error' => $this->apiTrans('TREATMENT_NOT_FOUND')], 404);
+            return $this->json(['error' => 'Tractament no trobat'], 404);
         }
 
         $data = json_decode($request->getContent(), true);
@@ -130,9 +122,9 @@ final class TreatmentController extends AbstractController
         $em->flush();
 
         return $this->json([
-            'message' => $this->apiTrans('TREATMENT_UPDATED_OK'),
+            'message' => 'Tractament actualitzat correctament',
             'id' => $treatment->getId(),
-            'status' => 'success',
+            'status' => 'success'
         ]);
     }
 
@@ -142,15 +134,15 @@ final class TreatmentController extends AbstractController
         $treatment = $treatmentRepository->find($id);
 
         if (!$treatment) {
-            return $this->json(['error' => $this->apiTrans('TREATMENT_NOT_FOUND')], 404);
+            return $this->json(['error' => 'Tractament no trobat'], 404);
         }
         
         $em->remove($treatment);
         $em->flush();
 
         return $this->json([
-            'message' => $this->apiTrans('TREATMENT_DELETED_OK'),
-            'status' => 'success',
+            'message' => 'Tractament eliminat correctament',
+            'status' => 'success'
         ]);
     }
 
@@ -184,12 +176,12 @@ final class TreatmentController extends AbstractController
         $rowsUpdated = $treatmentRepo->markAsFinished($id);
 
         if ($rowsUpdated === 0) {
-            return $this->json(['error' => $this->apiTrans('TREATMENT_ALREADY_FINISHED_OR_MISSING')], 404);
+            return $this->json(['error' => 'No se ha encontrado el tratamiento o ya estaba finalizado'], 404);
         }
 
         return $this->json([
             'status' => 'success',
-            'message' => $this->apiTrans('TREATMENT_FINISHED_OK')
+            'message' => 'Tractament marcat com a Finalitzat'
         ]);
     }
 }

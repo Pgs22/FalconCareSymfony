@@ -39,7 +39,6 @@ final class PatientProfileImageApiTest extends WebTestCase
         return [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_AUTHORIZATION' => 'Bearer ' . $token,
-            'HTTP_ACCEPT_LANGUAGE' => 'es',
         ];
     }
 
@@ -199,7 +198,6 @@ final class PatientProfileImageApiTest extends WebTestCase
         $userHeaders = [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_AUTHORIZATION' => 'Bearer ' . $login['accessToken'],
-            'HTTP_ACCEPT_LANGUAGE' => 'es',
         ];
 
         $client->request('PUT', '/api/patients/' . $patient['id'], [], [], $userHeaders, json_encode([
@@ -207,7 +205,7 @@ final class PatientProfileImageApiTest extends WebTestCase
         ], \JSON_THROW_ON_ERROR));
         self::assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
         $err = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
-        self::assertSame('Prohibido', $err['error']);
+        self::assertSame('Forbidden', $err['error']);
     }
 
     public function testMedicationAllergiesStillWorksOnPut(): void

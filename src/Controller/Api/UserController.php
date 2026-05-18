@@ -2,7 +2,6 @@
 
 namespace App\Controller\Api;
 
-use App\Controller\Api\Concerns\ApiTranslatorTrait;
 use App\Entity\User;
 use App\Form\UserType;
 use App\Repository\UserRepository;
@@ -15,19 +14,15 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Contracts\Translation\TranslatorInterface;
 
 #[Route('/api/users')]
 #[OA\Tag(name: 'Users')]
 final class UserController extends AbstractController
 {
-    use ApiTranslatorTrait;
-
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly UserRepository $userRepository,
         private readonly UserPasswordHasherInterface $passwordHasher,
-        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -86,10 +81,7 @@ final class UserController extends AbstractController
     public function show(User $user): JsonResponse
     {
         if (!$this->canAccessUser($user)) {
-            return $this->json([
-                'error' => $this->apiHttpLine(Response::HTTP_FORBIDDEN),
-                'message' => $this->apiTrans('USER_ACCESS_PROFILE_FORBIDDEN'),
-            ], Response::HTTP_FORBIDDEN);
+            return $this->json(['error' => 'Forbidden', 'message' => 'You can only access your own user profile.'], Response::HTTP_FORBIDDEN);
         }
 
         return $this->json($this->serializeUser($user), Response::HTTP_OK);
@@ -127,7 +119,7 @@ final class UserController extends AbstractController
         $form = $this->createForm(UserType::class, $user, ['require_password' => true, 'csrf_protection' => false]);
         $requestData = self::getRequestData($request);
         self::applyProfileImageAliases($requestData);
-        if (($response = $this->normalizeProfileImageInRequest($requestData)) instanceof JsonResponse) {
+        if (($response = self::normalizeProfileImageInRequest($requestData)) instanceof JsonResponse) {
             return $response;
         }
         $form->submit($requestData);
@@ -177,15 +169,12 @@ final class UserController extends AbstractController
     public function update(Request $request, User $user): JsonResponse
     {
         if (!$this->canAccessUser($user)) {
-            return $this->json([
-                'error' => $this->apiHttpLine(Response::HTTP_FORBIDDEN),
-                'message' => $this->apiTrans('USER_UPDATE_PROFILE_FORBIDDEN'),
-            ], Response::HTTP_FORBIDDEN);
+            return $this->json(['error' => 'Forbidden', 'message' => 'You can only update your own user profile.'], Response::HTTP_FORBIDDEN);
         }
 
         $requestData = self::getRequestData($request);
         self::applyProfileImageAliases($requestData);
-        if (($response = $this->normalizeProfileImageInRequest($requestData)) instanceof JsonResponse) {
+        if (($response = self::normalizeProfileImageInRequest($requestData)) instanceof JsonResponse) {
             return $response;
         }
 
@@ -224,13 +213,6 @@ final class UserController extends AbstractController
     )]
     public function delete(User $user): JsonResponse
     {
-        if (!$this->isGranted('ROLE_ADMIN')) {
-            return $this->json([
-                'error' => $this->apiHttpLine(Response::HTTP_FORBIDDEN),
-                'message' => $this->apiTrans('USER_DELETE_ADMIN_ONLY'),
-            ], Response::HTTP_FORBIDDEN);
-        }
-
         $this->entityManager->remove($user);
         $this->entityManager->flush();
 
@@ -258,7 +240,7 @@ final class UserController extends AbstractController
         }
 
         return new JsonResponse([
-            'error' => $this->apiTrans('AUTH_VALIDATION_FAILED'),
+            'error' => 'Validation failed',
             'errors' => $errors,
         ], Response::HTTP_UNPROCESSABLE_ENTITY);
     }
@@ -288,7 +270,7 @@ final class UserController extends AbstractController
     /**
      * Validates and normalizes `profileImage` in place (empty string → null) when present.
      */
-    private function normalizeProfileImageInRequest(array &$requestData): ?JsonResponse
+    private static function normalizeProfileImageInRequest(array &$requestData): ?JsonResponse
     {
         if (!array_key_exists('profileImage', $requestData)) {
             return null;
@@ -297,8 +279,8 @@ final class UserController extends AbstractController
         $result = PatientProfileImageResolver::validateAndNormalize($requestData['profileImage']);
         if (!$result['ok']) {
             return new JsonResponse([
-                'error' => $this->apiTrans('AUTH_VALIDATION_FAILED'),
-                'message' => $this->apiTrans($result['messageKey'], $result['messageParams'] ?? []),
+                'error' => 'Validation failed',
+                'message' => $result['message'],
             ], Response::HTTP_BAD_REQUEST);
         }
         $requestData['profileImage'] = $result['value'];
