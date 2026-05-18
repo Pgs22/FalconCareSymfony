@@ -54,10 +54,7 @@ security:
         - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/register-doctor, roles: PUBLIC_ACCESS }
         - { path: ^/api/health, roles: PUBLIC_ACCESS }
-        # /api/users: listar y crear solo admin; borrar solo admin; GET/PUT/PATCH /api/users/{id} autenticados (el controlador restringe al propio usuario o admin).
-        - { path: ^/api/users$, roles: ROLE_ADMIN, methods: [GET, POST] }
-        - { path: '^/api/users/\d+$', roles: ROLE_ADMIN, methods: [DELETE] }
-        - { path: '^/api/users/\d+$', roles: IS_AUTHENTICATED_FULLY, methods: [GET, PUT, PATCH] }
+        - { path: ^/api/users, roles: ROLE_ADMIN }
         - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
         # - { path: ^/admin, roles: ROLE_ADMIN }
         # - { path: ^/profile, roles: ROLE_USER }

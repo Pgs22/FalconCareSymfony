@@ -170,84 +170,11 @@ final class AppointmentsApiTest extends WebTestCase
             }
         }
 
-        return self::persistTestPatientWithoutOdontogram($em);
+        self::fail('Debe existir al menos un Patient#1..#10 sin lastOdontogramId para probar primera visita.');
     }
 
-    /**
-     * Paciente nuevo sin lastOdontogramId (BBDD reales / Neon pueden tener ya odontograma en todos los fixtures 1-10).
-     */
-    private static function persistTestPatientWithoutOdontogram(EntityManagerInterface $em): Patient
+    private static function getExistingTreatmentForPatient(Patient $patient): ?Treatment
     {
-        $suffix = strtoupper(bin2hex(random_bytes(5)));
-        $p = new Patient();
-        $p->setIdentityDocument('E2E-NOOD-'.$suffix);
-        $p->setFirstName('Test');
-        $p->setLastName('PrimeraVisita');
-        $p->setPhone('600000001');
-        $p->setEmail('e2e-primera-'.$suffix.'@test.local');
-        $p->setAddress('Adreça test');
-        $p->setConsultationReason('Motiu');
-        $p->setFamilyHistory('N/A');
-        $p->setHealthStatus('Bo');
-        $p->setLifestyleHabits('N/A');
-        $p->setMedicationAllergies('Cap coneguda');
-        $p->setRegistrationDate(new \DateTimeImmutable());
-        $em->persist($p);
-        $em->flush();
-
-        return $p;
-    }
-
-    /**
-     * Paciente con id en 1..10 que tenga al menos una cita con tratamiento (datos típicos de fixtures).
-     *
-     * @param list<int>|null $allowedIds restringe candidatos (p. ej. [1, 2, …, 10])
-     */
-    private static function getPatientWithExistingTreatment(
-        EntityManagerInterface $em,
-        ?Patient $exclude = null,
-        ?array $allowedIds = null,
-    ): Patient {
-        $ids = $allowedIds ?? range(1, 10);
-        $start = random_int(0, max(0, \count($ids) - 1));
-        $orderedIds = array_merge(\array_slice($ids, $start), \array_slice($ids, 0, $start));
-
-        foreach ($orderedIds as $id) {
-            if ($exclude !== null && (int) $id === (int) $exclude->getId()) {
-                continue;
-            }
-            $p = $em->find(Patient::class, $id);
-            if (!$p instanceof Patient) {
-                continue;
-            }
-            if (self::getExistingTreatmentForPatient($em, $p) instanceof Treatment) {
-                return $p;
-            }
-        }
-
-        self::fail('Se necesita al menos un paciente con cita y tratamiento en la BBDD de test (fixtures o ids 1–10).');
-    }
-
-    private static function getExistingTreatmentForPatient(EntityManagerInterface $em, Patient $patient): ?Treatment
-    {
-        $pid = $patient->getId();
-        if ($pid === null) {
-            return null;
-        }
-
-        $fromDb = $em->createQueryBuilder()
-            ->select('t')
-            ->from(Treatment::class, 't')
-            ->innerJoin(Appointment::class, 'a', 'WITH', 'a.treatment = t AND IDENTITY(a.patient) = :pid')
-            ->setParameter('pid', $pid)
-            ->setMaxResults(1)
-            ->getQuery()
-            ->getOneOrNullResult();
-
-        if ($fromDb instanceof Treatment) {
-            return $fromDb;
-        }
-
         foreach ($patient->getAppointments() as $appointment) {
             $treatment = $appointment->getTreatment();
             if ($treatment instanceof Treatment) {
@@ -313,8 +240,8 @@ final class AppointmentsApiTest extends WebTestCase
         $box = self::getRandomBox($em);
 
         $doctor = self::getDoctorOne($em);
-        $patient = self::getPatientOne($em);
-        $treatment = self::getExistingTreatmentForPatient($em, $patient);
+        $patient = self::getRandomPatientWithoutLastOdontogram($em);
+        $treatment = self::getExistingTreatmentForPatient($patient);
 
         $appointment = new Appointment();
         $visitDate = self::uniqueVisitDate('READ'.strtoupper(bin2hex(random_bytes(4))));
@@ -375,7 +302,7 @@ final class AppointmentsApiTest extends WebTestCase
         $box = self::getRandomBox($em);
 
         $doctor = self::getDoctorOne($em);
-        $patient = self::getRandomPatientWithoutLastOdontogram($em);
+        $patient = self::getPatientOne($em);
 
         self::assertNull($patient->getLastOdontogramId());
 
@@ -438,13 +365,7 @@ final class AppointmentsApiTest extends WebTestCase
         $existingAppointment = $fixture['appointment'];
         $patient = $fixture['patient'];
 
-        /** @var Box $boxOne */
-        $boxOne = self::getRandomExistingEntityById($em, Box::class, [1], 'Box');
-        $existingAppointment->setBox($boxOne);
-        $em->flush();
-
         $otherBox = self::getBoxTwo($em);
-        self::assertNotSame($boxOne->getId(), $otherBox->getId(), 'El test exige cita existente en caja 1 y nueva cita en caja 2.');
 
         $headers = self::getAuthHeadersFor($client, $adminEmail, 'secret123');
 
@@ -658,11 +579,11 @@ final class AppointmentsApiTest extends WebTestCase
 
         $doctor1 = self::getDoctorOne($em);
         $doctor2 = self::getOtherDoctor($em, $doctor1);
-        $patient1 = self::getPatientWithExistingTreatment($em);
-        $patient2 = self::getPatientWithExistingTreatment($em, $patient1);
+        $patient1 = self::getPatientOne($em);
+        $patient2 = self::getOtherPatient($em, $patient1);
 
-        $treatment1 = self::getExistingTreatmentForPatient($em, $patient1);
-        $treatment2 = self::getExistingTreatmentForPatient($em, $patient2);
+        $treatment1 = self::getExistingTreatmentForPatient($patient1);
+        $treatment2 = self::getExistingTreatmentForPatient($patient2);
         self::assertInstanceOf(Treatment::class, $treatment1, 'El paciente inicial debe tener un tratamiento existente en la BBDD de test.');
         self::assertInstanceOf(Treatment::class, $treatment2, 'El paciente destino debe tener un tratamiento existente en la BBDD de test.');
 

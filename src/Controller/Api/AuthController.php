@@ -2,7 +2,6 @@
 
 namespace App\Controller\Api;
 
-use App\Controller\Api\Concerns\ApiTranslatorTrait;
 use App\Entity\Doctor;
 use App\Entity\User;
 use App\Repository\DoctorRepository;
@@ -16,21 +15,17 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Contracts\Translation\TranslatorInterface;
 
 #[Route('/api/auth')]
 #[OA\Tag(name: 'Auth')]
 final class AuthController extends AbstractController
 {
-    use ApiTranslatorTrait;
-
     public function __construct(
         private readonly UserRepository $userRepository,
         private readonly DoctorRepository $doctorRepository,
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly JwtTokenManager $jwtTokenManager,
         private readonly EntityManagerInterface $entityManager,
-        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -84,10 +79,10 @@ final class AuthController extends AbstractController
 
         if ($email === '' || $password === '') {
             return $this->json([
-                'error' => $this->apiTrans('AUTH_VALIDATION_FAILED'),
+                'error' => 'Validation failed',
                 'errors' => [
-                    ['field' => 'email', 'message' => $this->apiTrans('AUTH_FIELD_BLANK')],
-                    ['field' => 'password', 'message' => $this->apiTrans('AUTH_FIELD_BLANK')],
+                    ['field' => 'email', 'message' => 'This value should not be blank.'],
+                    ['field' => 'password', 'message' => 'This value should not be blank.'],
                 ],
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
@@ -95,11 +90,11 @@ final class AuthController extends AbstractController
         /** @var User|null $user */
         $user = $this->userRepository->findOneByEmailCaseInsensitive($email);
         if (!$user) {
-            return $this->json(['error' => $this->apiTrans('AUTH_INVALID_CREDENTIALS')], Response::HTTP_UNAUTHORIZED);
+            return $this->json(['error' => 'Invalid credentials'], Response::HTTP_UNAUTHORIZED);
         }
 
         if (!$this->passwordHasher->isPasswordValid($user, $password)) {
-            return $this->json(['error' => $this->apiTrans('AUTH_INVALID_CREDENTIALS')], Response::HTTP_UNAUTHORIZED);
+            return $this->json(['error' => 'Invalid credentials'], Response::HTTP_UNAUTHORIZED);
         }
 
         $token = $this->jwtTokenManager->createToken($user);
@@ -127,31 +122,31 @@ final class AuthController extends AbstractController
 
         if ($fullName === '' || $email === '' || $password === '') {
             return $this->json([
-                'error' => $this->apiTrans('AUTH_VALIDATION_FAILED'),
-                'message' => $this->apiTrans('AUTH_REGISTER_FIELDS_REQUIRED'),
+                'error' => 'Validation failed',
+                'message' => 'fullName, email and password are required.',
             ], Response::HTTP_BAD_REQUEST);
         }
 
         if (mb_strlen($password) < 8) {
             return $this->json([
-                'error' => $this->apiTrans('AUTH_VALIDATION_FAILED'),
-                'message' => $this->apiTrans('AUTH_PASSWORD_MIN_LENGTH'),
+                'error' => 'Validation failed',
+                'message' => 'Password must be at least 8 characters.',
             ], Response::HTTP_BAD_REQUEST);
         }
 
         $normalizedEmail = mb_strtolower($email);
         if ($this->userRepository->findOneByEmailCaseInsensitive($normalizedEmail)) {
             return $this->json([
-                'error' => $this->apiTrans('AUTH_VALIDATION_FAILED'),
-                'message' => $this->apiTrans('EMAIL_ALREADY_REGISTERED'),
+                'error' => 'Validation failed',
+                'message' => 'Email already registered.',
             ], Response::HTTP_BAD_REQUEST);
         }
 
         $nameParts = preg_split('/\s+/', $fullName) ?: [];
         if (count($nameParts) < 2) {
             return $this->json([
-                'error' => $this->apiTrans('AUTH_VALIDATION_FAILED'),
-                'message' => $this->apiTrans('AUTH_FULL_NAME_REQUIRES_SURNAME'),
+                'error' => 'Validation failed',
+                'message' => 'Full name must include name and surname.',
             ], Response::HTTP_BAD_REQUEST);
         }
 
@@ -186,7 +181,7 @@ final class AuthController extends AbstractController
     {
         $user = $this->getUser();
         if (!$user instanceof User) {
-            return $this->json(['error' => $this->apiTrans('AUTH_UNAUTHORIZED')], Response::HTTP_UNAUTHORIZED);
+            return $this->json(['error' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
         }
 
         $doctor = $this->doctorRepository->findOneBy(['email' => $user->getUserIdentifier()]);
