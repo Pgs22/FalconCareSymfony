@@ -43,11 +43,11 @@ class DocumentFixtures extends Fixture implements FixtureGroupInterface
                 
                 // --- PHYSICAL FILE LOGIC ---
                 // Simulating a real file upload [cite: 12-02-2026]
+                $pdfBytes = '%PDF-1.4 Fake Document Content';
                 $tmpFilePath = tempnam(sys_get_temp_dir(), 'doc');
-                file_put_contents($tmpFilePath, '%PDF-1.4 Fake Document Content');
+                file_put_contents($tmpFilePath, $pdfBytes);
 
-                // Naming convention: p{id}_{uniqid}.pdf [cite: 12-02-2026]
-                $newFilename = 'p' . $patient->getId() . '_' . uniqid() . '.pdf';
+                $newFilename = uniqid('', true) . '.pdf';
                 
                 // Move file to final destination [cite: 12-02-2026]
                 copy($tmpFilePath, $this->uploadDir . '/' . $newFilename);
@@ -56,6 +56,7 @@ class DocumentFixtures extends Fixture implements FixtureGroupInterface
                 // --- CONFIGURE DOCUMENT ENTITY ---
                 $document = new Document();
                 $document->setFilePath($newFilename);
+                $document->setFileContent($pdfBytes);
                 $document->setType('application/pdf');
                 $document->setOriginalName('fixture-' . $newFilename);
                 $document->setCaptureDate(\DateTimeImmutable::createFromMutable($this->faker->dateTimeThisYear()));

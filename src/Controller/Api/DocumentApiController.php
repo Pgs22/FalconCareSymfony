@@ -7,6 +7,7 @@ namespace App\Controller\Api;
 use App\Entity\Patient;
 use App\Repository\DocumentRepository;
 use App\Repository\PatientRepository;
+use App\Service\DocumentBinaryStorage;
 use App\Service\DocumentPatientAccessGuard;
 use App\Service\PatientRecordsAccessChecker;
 use App\Util\DocumentApiSerializer;
@@ -57,6 +58,7 @@ final class DocumentApiController extends AbstractController
         private readonly DocumentRepository $documentRepository,
         private readonly PatientRecordsAccessChecker $patientRecordsAccess,
         private readonly DocumentPatientAccessGuard $documentPatientAccess,
+        private readonly DocumentBinaryStorage $documentBinaryStorage,
         #[Autowire('%env(API_BASE_URL)%')]
         private readonly string $apiBaseUrl,
         #[Autowire('%env(int:DOCUMENT_MAX_UPLOAD_BYTES)%')]
@@ -196,19 +198,39 @@ final class DocumentApiController extends AbstractController
             return $this->apiError($err['status'], $err['code'], $err['message']);
         }
 
-        $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
-        if (!is_file($filePath)) {
-            return $this->apiError(Response::HTTP_NOT_FOUND, 'DOCUMENT_FILE_NOT_FOUND', 'File not found on server');
+        $downloadName = $document->getOriginalName() ?? $document->getFilePath() ?? 'document';
+        $safeName = preg_replace('/[^\w.\- ]+/u', '_', $downloadName) ?: 'document';
+        $mime = $document->getType() ?? 'application/octet-stream';
+
+        $bytes = $this->documentBinaryStorage->resolveBytes($document);
+        if (($bytes === null || $bytes === '') && $document->getId() !== null) {
+            $bytes = $this->documentRepository->loadFileContentBinary((int) $document->getId());
         }
 
-        $downloadName = $document->getOriginalName() ?? $document->getFilePath();
+        if ($bytes === null || $bytes === '') {
+            $absolutePath = $this->documentBinaryStorage->resolveAbsolutePath($document);
+            if ($absolutePath !== null) {
+                return $this->file(
+                    $absolutePath,
+                    $safeName,
+                    ResponseHeaderBag::DISPOSITION_INLINE,
+                    ['Content-Type' => $mime, 'Cache-Control' => 'private, max-age=3600']
+                );
+            }
 
-        return $this->file(
-            $filePath,
-            $downloadName,
-            ResponseHeaderBag::DISPOSITION_INLINE,
-            ['Content-Type' => $document->getType() ?? 'application/octet-stream']
-        );
+            return $this->apiError(
+                Response::HTTP_NOT_FOUND,
+                'DOCUMENT_FILE_NOT_FOUND',
+                'File not found on server. Re-upload the document or run app:documents:backfill-binary on the machine that has the file.'
+            );
+        }
+
+        return new Response($bytes, Response::HTTP_OK, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => ResponseHeaderBag::DISPOSITION_INLINE . '; filename="' . $safeName . '"',
+            'Content-Length' => (string) \strlen($bytes),
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
     }
 
     #[Route('', name: 'api_document_list', methods: ['GET'])]
@@ -388,8 +410,8 @@ final class DocumentApiController extends AbstractController
         }
 
         try {
-            $filename = $this->handleFileStorage($uploadedFile, $patient);
-        } catch (FileException) {
+            $stored = $this->documentBinaryStorage->persistUpload($uploadedFile, $extension);
+        } catch (FileException|\RuntimeException) {
             return $this->apiError(Response::HTTP_INTERNAL_SERVER_ERROR, 'DOCUMENT_FILE_STORE_FAILED', 'Could not upload file');
         }
 
@@ -399,11 +421,24 @@ final class DocumentApiController extends AbstractController
         $originalName = $uploadedFile->getClientOriginalName() ?: null;
 
         $document = $this->documentRepository->create(
-            $filename,
+            $stored['filename'],
             ['type' => $finalStoredType, 'description' => $description],
             $patient,
-            $originalName
+            $originalName,
+            $stored['content']
         );
+
+        $documentId = (int) $document->getId();
+        if (!$this->ensureFileContentInDatabase($documentId, $stored['content'])) {
+            $this->documentBinaryStorage->deleteLocalFile($document);
+            $this->documentRepository->delete($document);
+
+            return $this->apiError(
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                'DOCUMENT_BINARY_PERSIST_FAILED',
+                'Could not store file in shared database (file_content). Other team members would not be able to preview this document.'
+            );
+        }
 
         return $this->json(
             DocumentApiSerializer::toArray($document, $this->apiBaseUrl),
@@ -534,10 +569,7 @@ final class DocumentApiController extends AbstractController
             return $this->apiError($err['status'], $err['code'], $err['message']);
         }
 
-        $filePath = $this->getParameter('kernel.project_dir') . '/public/uploads/documents/' . $document->getFilePath();
-        if (is_file($filePath)) {
-            @unlink($filePath);
-        }
+        $this->documentBinaryStorage->deleteLocalFile($document);
 
         $this->documentRepository->delete($document);
 
@@ -591,15 +623,22 @@ final class DocumentApiController extends AbstractController
         );
     }
 
-    private function handleFileStorage(UploadedFile $file, Patient $patient): string
+    /** Garantiza que Neon tenga el binario (cualquier compañero puede descargar sin disco local). */
+    private function ensureFileContentInDatabase(int $documentId, string $content): bool
     {
-        $extension = $file->guessExtension() ?: 'bin';
-        $prefix = 'p' . $patient->getId();
-        $newFilename = $prefix . '_' . uniqid() . '.' . $extension;
-        $uploadDir = $this->getParameter('kernel.project_dir') . '/public/uploads/documents';
-        $file->move($uploadDir, $newFilename);
+        if ($content === '') {
+            return false;
+        }
 
-        return $newFilename;
+        $loaded = $this->documentRepository->loadFileContentBinary($documentId);
+        if ($loaded !== null && $loaded !== '' && \strlen($loaded) === \strlen($content)) {
+            return true;
+        }
+
+        $this->documentRepository->persistFileContentBinary($documentId, $content);
+        $loaded = $this->documentRepository->loadFileContentBinary($documentId);
+
+        return $loaded !== null && $loaded !== '' && \strlen($loaded) === \strlen($content);
     }
 
     /**

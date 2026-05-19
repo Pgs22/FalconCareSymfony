@@ -4,7 +4,10 @@ namespace App\Repository;
 
 use App\Entity\Document;
 use App\Entity\Patient;
+use App\Service\DocumentBinaryStorage;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 use Doctrine\ORM\Tools\Pagination\Paginator;
 
@@ -88,21 +91,63 @@ class DocumentRepository extends ServiceEntityRepository
     /**
      * @param array{type?: string, description?: string|null} $data
      */
-    public function create(string $filename, array $data, Patient $patient, ?string $originalName = null): Document
-    {
+    public function create(
+        string $filename,
+        array $data,
+        Patient $patient,
+        ?string $originalName = null,
+        ?string $fileContent = null,
+    ): Document {
         $document = new Document();
-        $document->setFilePath($filename);
+        $document->setFilePath(basename(str_replace('\\', '/', $filename)));
         $document->setType($data['type'] ?? 'application/octet-stream');
         $document->setCaptureDate(new \DateTimeImmutable());
         $document->setDescription($data['description'] ?? null);
         $document->setOriginalName($originalName);
         $document->setPatient($patient);
+        if ($fileContent !== null && $fileContent !== '') {
+            $document->setFileContent($fileContent);
+        }
 
         $em = $this->getEntityManager();
         $em->persist($document);
         $em->flush();
 
+        if ($fileContent !== null && $fileContent !== '') {
+            $this->persistFileContentBinary((int) $document->getId(), $fileContent);
+            $em->refresh($document);
+        }
+
         return $document;
+    }
+
+    /**
+     * Persistencia explícita en BYTEA (PostgreSQL/Neon) para que otros equipos puedan descargar sin disco local.
+     */
+    public function persistFileContentBinary(int $documentId, string $content): void
+    {
+        $conn = $this->getEntityManager()->getConnection();
+        $conn->executeStatement(
+            'UPDATE document SET file_content = :content WHERE id = :id',
+            ['content' => $content, 'id' => $documentId],
+            ['content' => Types::BINARY, 'id' => ParameterType::INTEGER],
+        );
+    }
+
+    public function loadFileContentBinary(int $documentId): ?string
+    {
+        $conn = $this->getEntityManager()->getConnection();
+        $raw = $conn->fetchOne(
+            'SELECT file_content FROM document WHERE id = :id',
+            ['id' => $documentId],
+            ['id' => ParameterType::INTEGER],
+        );
+
+        if ($raw === false || $raw === null) {
+            return null;
+        }
+
+        return DocumentBinaryStorage::normalizeBlob($raw);
     }
 
     public function edit(Document $document, array $data): Document

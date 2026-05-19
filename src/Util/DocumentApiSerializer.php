@@ -58,6 +58,8 @@ final class DocumentApiSerializer
             'path' => $storedPath,
             'filePath' => $storedPath,
             'file_path' => $storedPath,
+            'storagePath' => $storedPath !== '' ? 'uploads/documents/' . basename($storedPath) : '',
+            'storage_path' => $storedPath !== '' ? 'uploads/documents/' . basename($storedPath) : '',
             'url' => $downloadUrl,
             'fileUrl' => $downloadUrl,
             'file_url' => $downloadUrl,
