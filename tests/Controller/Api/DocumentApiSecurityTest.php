@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Controller\Api;
 
+use App\Entity\Document;
+use App\Service\DocumentBinaryStorage;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Response;
@@ -78,6 +81,10 @@ final class DocumentApiSecurityTest extends WebTestCase
         $docPayload = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         $docId = (int) $docPayload['id'];
         self::assertSame($idA, $docPayload['patient']['id']);
+        $storedName = basename((string) ($docPayload['file_path'] ?? ''));
+        self::assertNotSame('', $storedName);
+        $diskPath = dirname(__DIR__, 3) . '/public/uploads/documents/' . $storedName;
+        self::assertFileExists($diskPath, 'Upload must persist under public/uploads/documents');
 
         return ['token' => $token, 'patientA' => $idA, 'patientB' => $idB, 'docId' => $docId];
     }
@@ -145,12 +152,44 @@ final class DocumentApiSecurityTest extends WebTestCase
 
         $client->request('GET', '/api/documents/' . $ctx['docId'] . '/download?patientId=' . $ctx['patientA'], [], [], $headers);
         self::assertResponseIsSuccessful();
+        self::assertStringContainsString('application/pdf', (string) $client->getResponse()->headers->get('Content-Type'));
 
         $client->request('GET', '/api/documents/' . $ctx['docId'] . '/download?patientId=' . $ctx['patientB'], [], [], $headers);
         self::assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
 
         $client->request('GET', '/api/documents/' . $ctx['docId'] . '/download', [], [], $headers);
         self::assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+    }
+
+    /** Simula otro ordenador: Neon tiene el binario pero no existe el fichero en public/uploads/documents. */
+    public function testDownloadServesFromDatabaseWhenLocalFileMissing(): void
+    {
+        $client = static::createClient();
+        $ctx = self::doctorTwoPatientsAndOneDoc($client);
+        $headers = ['HTTP_AUTHORIZATION' => 'Bearer ' . $ctx['token']];
+
+        /** @var EntityManagerInterface $em */
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $document = $em->getRepository(Document::class)->find($ctx['docId']);
+        self::assertInstanceOf(Document::class, $document);
+
+        $storedName = basename((string) $document->getFilePath());
+        self::assertNotSame('', $storedName);
+
+        $diskPath = $client->getContainer()->getParameter('kernel.project_dir')
+            . '/public/uploads/documents/' . $storedName;
+        if (is_file($diskPath)) {
+            unlink($diskPath);
+        }
+        self::assertFileDoesNotExist($diskPath);
+
+        $blob = DocumentBinaryStorage::normalizeBlob($document->getFileContentRaw());
+        self::assertNotNull($blob);
+        self::assertNotSame('', $blob);
+
+        $client->request('GET', '/api/documents/' . $ctx['docId'] . '/download?patientId=' . $ctx['patientA'], [], [], $headers);
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('%PDF', (string) $client->getResponse()->getContent());
     }
 
     public function testGetDocumentMetadataRequiresMatchingPatientId(): void
@@ -283,7 +322,8 @@ final class DocumentApiSecurityTest extends WebTestCase
 
         $tmp = tempnam(sys_get_temp_dir(), 'big');
         self::assertNotFalse($tmp);
-        file_put_contents($tmp, str_repeat('A', 10_000));
+        $maxBytes = (int) (getenv('DOCUMENT_MAX_UPLOAD_BYTES') ?: ($_ENV['DOCUMENT_MAX_UPLOAD_BYTES'] ?? 10_485_760));
+        file_put_contents($tmp, "%PDF-1.4\n" . str_repeat('0', $maxBytes + 1));
         $upload = new UploadedFile($tmp, 'big.pdf', 'application/pdf', null, true);
 
         $client->request('POST', '/api/documents', [
@@ -294,7 +334,7 @@ final class DocumentApiSecurityTest extends WebTestCase
         self::assertResponseStatusCodeSame(Response::HTTP_REQUEST_ENTITY_TOO_LARGE);
         $err = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         self::assertArrayHasKey('maxUploadBytes', $err);
-        self::assertSame(8192, $err['maxUploadBytes']);
+        self::assertSame($maxBytes, $err['maxUploadBytes']);
     }
 
 }

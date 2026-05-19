@@ -23,6 +23,10 @@ class Document
     #[ORM\Column(length: 255)]
     private ?string $filePath = null;
 
+    /** Binario del fichero (PDF, imagen, etc.) — fuente de verdad compartida en Neon (BYTEA). */
+    #[ORM\Column(type: Types::BINARY, nullable: true)]
+    private mixed $fileContent = null;
+
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $originalName = null;
 
@@ -61,6 +65,18 @@ class Document
     public function setFilePath(string $filePath): static
     {
         $this->filePath = $filePath;
+
+        return $this;
+    }
+
+    public function getFileContentRaw(): mixed
+    {
+        return $this->fileContent;
+    }
+
+    public function setFileContent(?string $fileContent): static
+    {
+        $this->fileContent = $fileContent;
 
         return $this;
     }
