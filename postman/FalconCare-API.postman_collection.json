@@ -1,21 +1,43 @@
 {
   "info": {
     "name": "FalconCare API",
-    "description": "Colección alineada con Symfony. Ejecutar primero **auth → Login — JWT issued** con entorno **FalconCare Local**. Credenciales por defecto: fixtures (`admin@falconcare.com` / `admin123`).",
+    "description": "Colección generada desde OpenAPI (/api/docs.json). Orden recomendado: **health** → **auth** (login guarda JWT) → resto.\n\nEntorno: **FalconCare Local**. Fixtures: `admin@falconcare.com` / `admin123`.\n\nRegenerar: `node postman/generate-collection.mjs` · Ejecutar: `node postman/run-newman.mjs`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "visitDate",
+      "value": "2026-05-21"
+    },
+    {
+      "key": "documentCaptureDate",
+      "value": "2026-05-21"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const today = new Date().toISOString().slice(0, 10);",
+          "pm.environment.set('visitDate', today);",
+          "pm.environment.set('documentCaptureDate', today);"
+        ]
+      }
     }
   ],
   "item": [
     {
-      "name": "health",
+      "name": "00 — health",
+      "description": "Público, sin JWT.",
       "item": [
         {
-          "name": "Health check",
+          "name": "GET /api/health",
           "request": {
             "method": "GET",
             "header": [
@@ -25,6 +47,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/health",
+            "description": "",
             "auth": {
               "type": "noauth"
             }
@@ -35,7 +58,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
                 ]
               }
             }
@@ -44,10 +68,11 @@
       ]
     },
     {
-      "name": "auth",
+      "name": "01 — auth",
+      "description": "Login JWT y casos de error. register-doctor es público.",
       "item": [
         {
-          "name": "Login — JWT issued",
+          "name": "POST /api/auth/login — JWT issued",
           "request": {
             "method": "POST",
             "header": [
@@ -61,6 +86,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/auth/login",
+            "description": "Guarda accessToken en el entorno.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
@@ -85,6 +111,7 @@
                   "  const json = pm.response.json();",
                   "  pm.expect(json).to.have.property('accessToken');",
                   "  pm.expect(json.tokenType).to.eql('Bearer');",
+                  "  pm.expect(json.user).to.have.property('email');",
                   "});"
                 ]
               }
@@ -92,7 +119,7 @@
           ]
         },
         {
-          "name": "Login — Invalid credentials",
+          "name": "POST /api/auth/login — Invalid credentials",
           "request": {
             "method": "POST",
             "header": [
@@ -106,6 +133,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/auth/login",
+            "description": "",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"noexiste@falconcare.com\",\n  \"password\": \"wrong\"\n}"
@@ -130,7 +158,7 @@
           ]
         },
         {
-          "name": "Login — Validation failed",
+          "name": "POST /api/auth/login — Validation failed",
           "request": {
             "method": "POST",
             "header": [
@@ -144,6 +172,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/auth/login",
+            "description": "",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"\",\n  \"password\": \"\"\n}"
@@ -166,14 +195,66 @@
               }
             }
           ]
+        },
+        {
+          "name": "POST /api/auth/register-doctor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/register-doctor",
+            "description": "Email único por ejecución (variable registerDoctorEmail).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Postman Test Doctor\",\n  \"email\": \"{{registerDoctorEmail}}\",\n  \"password\": \"postmanPass123\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Doctor user created', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('id');",
+                  "  pm.expect(json.email).to.eql(pm.environment.get('registerDoctorEmail'));",
+                  "  pm.expect(json.roles).to.include('ROLE_DOCTOR');",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uid = Date.now();",
+                  "pm.environment.set('registerDoctorEmail', `postman.dr.${uid}@falconcare.test`);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "patients",
+      "name": "02 — patients",
       "item": [
         {
-          "name": "List patients",
+          "name": "GET /api/patients — list (bootstrap ids)",
           "request": {
             "method": "GET",
             "header": [
@@ -183,6 +264,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/patients",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -200,14 +282,24 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const patientsPayload = pm.response.json();",
+                  "const patientsList = Array.isArray(patientsPayload) ? patientsPayload : [];",
+                  "pm.test('Patient list not empty', () => pm.expect(patientsList.length).to.be.above(0));",
+                  "if (patientsList.length) {",
+                  "  pm.environment.set('patientId', String(patientsList[0].id));",
+                  "  const withDoc = patientsList.find((p) => p.identityDocument);",
+                  "  if (withDoc?.identityDocument) {",
+                  "    pm.environment.set('identityDocument', withDoc.identityDocument);",
+                  "  }",
+                  "}"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Get patient",
+          "name": "GET /api/patients/{id}",
           "request": {
             "method": "GET",
             "header": [
@@ -217,6 +309,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/patients/{{patientId}}",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -234,14 +327,61 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Patient appointments",
+          "name": "GET /api/patients/by-identity/{identityDocument}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/patients/by-identity/{{identityDocument}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Array result', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('identityDocument')) {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/patients/{id}/appointments",
           "request": {
             "method": "GET",
             "header": [
@@ -251,6 +391,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/patients/{{patientId}}/appointments",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -268,14 +409,19 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const appointmentsPayload = pm.response.json();",
+                  "pm.test('Appointments array', () => pm.expect(appointmentsPayload).to.be.an('array'));",
+                  "if (Array.isArray(appointmentsPayload) && appointmentsPayload[0]?.id) {",
+                  "  pm.environment.set('appointmentId', String(appointmentsPayload[0].id));",
+                  "}"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Patient documents",
+          "name": "GET /api/patients/{id}/documents",
           "request": {
             "method": "GET",
             "header": [
@@ -285,6 +431,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/patients/{{patientId}}/documents",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -302,7 +449,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const documentsPayload = pm.response.json();",
+                  "const documentsList = Array.isArray(documentsPayload) ? documentsPayload : (documentsPayload.member || documentsPayload['hydra:member'] || []);",
+                  "if (documentsList[0]?.id) {",
+                  "  pm.environment.set('documentId', String(documentsList[0].id));",
+                  "}"
                 ]
               }
             }
@@ -311,10 +463,10 @@
       ]
     },
     {
-      "name": "appointment",
+      "name": "03 — appointment",
       "item": [
         {
-          "name": "Index by date",
+          "name": "GET /api/appointment/index",
           "request": {
             "method": "GET",
             "header": [
@@ -324,6 +476,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/appointment/index?date={{visitDate}}",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -341,14 +494,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Weekly",
+          "name": "GET /api/appointment/weekly",
           "request": {
             "method": "GET",
             "header": [
@@ -358,6 +511,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/appointment/weekly?date={{visitDate}}",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -375,14 +529,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Statuses",
+          "name": "GET /api/appointment/statuses",
           "request": {
             "method": "GET",
             "header": [
@@ -392,6 +546,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/appointment/statuses",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -409,14 +564,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Setup form",
+          "name": "GET /api/appointment/setup-appointment-form",
           "request": {
             "method": "GET",
             "header": [
@@ -426,6 +581,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/appointment/setup-appointment-form?date={{visitDate}}",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -443,14 +599,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Doctors",
+          "name": "GET /api/appointment/doctors",
           "request": {
             "method": "GET",
             "header": [
@@ -460,6 +616,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/appointment/doctors",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -477,14 +634,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Get appointment",
+          "name": "GET /api/appointment/{id}",
           "request": {
             "method": "GET",
             "header": [
@@ -494,6 +651,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/appointment/{{appointmentId}}",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -511,7 +669,42 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/appointment/{id}/open",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/appointment/{{appointmentId}}/open",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -520,10 +713,10 @@
       ]
     },
     {
-      "name": "documents",
+      "name": "04 — documents",
       "item": [
         {
-          "name": "List documents (patientId)",
+          "name": "GET /api/documents?patientId=…",
           "request": {
             "method": "GET",
             "header": [
@@ -533,6 +726,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/documents?patientId={{patientId}}",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -550,7 +744,167 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const documentsPayload = pm.response.json();",
+                  "const documentsList = Array.isArray(documentsPayload) ? documentsPayload : (documentsPayload.member || documentsPayload['hydra:member'] || []);",
+                  "if (documentsList[0]?.id) {",
+                  "  pm.environment.set('documentId', String(documentsList[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/documents — missing patient (400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/documents",
+            "description": "Listado global deshabilitado; debe exigir filtro de paciente.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Patient filter required', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.code || json.error).to.be.ok;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/documents/captureDate",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/documents/captureDate?patientId={{patientId}}&date={{documentCaptureDate}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/documents/patient-docs/{identityDocument}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/documents/patient-docs/{{identityDocument}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('identityDocument')) {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/documents/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/documents/{{documentId}}?patientId={{patientId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -559,10 +913,10 @@
       ]
     },
     {
-      "name": "pathologies",
+      "name": "05 — pathologies",
       "item": [
         {
-          "name": "List pathologies",
+          "name": "GET /api/pathologies",
           "request": {
             "method": "GET",
             "header": [
@@ -572,6 +926,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/pathologies",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -589,14 +944,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Pathology types",
+          "name": "GET /api/pathologies/types",
           "request": {
             "method": "GET",
             "header": [
@@ -606,6 +961,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/pathologies/types",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -623,7 +979,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -632,83 +988,10 @@
       ]
     },
     {
-      "name": "users",
+      "name": "06 — treatments",
       "item": [
         {
-          "name": "List users (admin)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/api/users",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{accessToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Get user",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/api/users/1",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{accessToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "treatments",
-      "item": [
-        {
-          "name": "By patient",
+          "name": "GET /api/treatments/patient/{id}",
           "request": {
             "method": "GET",
             "header": [
@@ -718,6 +1001,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/treatments/patient/{{patientId}}",
+            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -735,7 +1019,128 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('OK', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 204]));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const treatmentsPayload = pm.response.json();",
+                  "const treatmentsList = Array.isArray(treatmentsPayload) ? treatmentsPayload : [];",
+                  "if (treatmentsList[0]?.id) {",
+                  "  pm.environment.set('treatmentId', String(treatmentsList[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/treatments/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/treatments/{{treatmentId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 — users (admin)",
+      "item": [
+        {
+          "name": "GET /api/users — list (bootstrap adminUserId)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/users",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const users = pm.response.json();",
+                  "pm.test('Users array', () => pm.expect(users).to.be.an('array'));",
+                  "const admin = users.find((u) => (u.email || '').toLowerCase() === 'admin@falconcare.com') || users[0];",
+                  "if (admin?.id) {",
+                  "  pm.environment.set('adminUserId', String(admin.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/users/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/users/{{adminUserId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
