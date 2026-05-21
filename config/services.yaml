@@ -29,5 +29,9 @@ services:
         arguments:
             $kernelProjectDir: '%kernel.project_dir%'
 
+    App\Service\DocumentBinaryStorage:
+        arguments:
+            $uploadDir: '%kernel.project_dir%/public/uploads/documents'
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
